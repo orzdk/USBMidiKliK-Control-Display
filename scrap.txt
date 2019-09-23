@@ -1,0 +1,96 @@
+  /* Current Mask 1111 00000000 00000000 00000000 00000000
+   * We get 0 1 12 6
+   * We want F0 77 77 78 01 | 00 | 00 | 00 | 0000 | 0000 | 0000 | 0000 
+   *         header         | sr | id | fms| cablebmak   | jackmask 
+   */
+  
+    Serial.println("--togglemasks cable jack--------------");
+    Serial.println(cableToggleMask);
+  Serial.println(jackToggleMask);
+
+
+  Serial.println("----------------");
+    Serial.println(mask);
+  Serial.println(currentCables);
+  Serial.println(currentJacks);
+  Serial.println("----------------");
+  Serial.println(keyBuffer[0]);
+  Serial.println(keyBuffer[1]);
+  Serial.println(keyBuffer[2]);
+  Serial.println(keyBuffer[3]);
+  Serial.println(keyBuffer[4]);
+  Serial.println(keyBuffer[5]);
+  Serial.println(keyBuffer[6]);
+  Serial.println(keyBuffer[7]);
+  Serial.println("----------------");  
+  Serial.println(s_cableserial);
+  Serial.println(s_cableserial_id);
+  Serial.println(t_cableserial);
+  Serial.println(t_cableserial_id);
+ 
+
+   uint8_t currentMapping;
+   char sysexString[];
+   char d1;
+
+   unsigned char sysex[13] = {0xF0, 0x77, 0x77, 0x78, 0x0F, 0x01,};
+   sysex[6] = keyBuffer[1];
+   sysex[7] = keyBuffer[2];
+
+   uint16_t cable = 0xFFFF & keyBuffer[1];
+     
+  /*if (keyBuffer[0] != "#" || keyBuffer[7] != "*" || (sizeof(keyBuffer)/sizeof(keyBuffer[0])) != "8" ){
+    
+    messagelcd.setCursor(0, 0); 
+    messagelcd.print("ERROR");
+    resetBuffer();
+
+    for (int x = 0; x < sizeof(integerArray) / sizeof(integerArray[0]); x++)
+    {
+      integerArray[x] = 0;
+    }
+
+    
+  } 
+  else {*/
+
+    int sourceType = keyBuffer[1];
+    int sourceId = keyBuffer[2];
+    int toCableId = keyBuffer[3];
+    int toJackId = keyBuffer[4];
+    
+    messagelcd.setCursor(0, 0); 
+    messagelcd.print(keyBuffer);
+    
+   /*}*/
+
+  for (int x = 0; x < sizeof(keyBuffer) / sizeof(keyBuffer[0]); x++)
+  {
+    if (strcmp(keyBuffer[x], "#") == 0){
+      if (
+      hexBuf[hexBufPos++] = 
+      cmd = 1;
+    }
+    else {
+      if (cmd == 1){
+        intToHexBuf[intToHexBufPos++] = keyBuffer[x];
+      }
+    }
+    
+  }
+
+  int intToHexBuf[2];
+  int intToHexBufPos = 0;
+  
+  int hexBuf[4];
+  int hexBufPos = 0;
+
+
+  
+  for (int x = 0; x < sizeof(sysex) / sizeof(sysex[0]); x++){
+    Serial.print(x); 
+    Serial.print(":"); 
+    Serial.println(sysex[x], HEX);  
+  }
+
+
