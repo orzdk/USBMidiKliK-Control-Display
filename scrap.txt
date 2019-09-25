@@ -1,3 +1,12 @@
+
+
+    /* send all routes */
+    //      Wire.beginTransmission(8);
+    //      Wire.write(sMsg);
+    //      Wire.endTransmission();    
+    //      delay(500);
+
+
 /**/
 /* 
    This is the control & display slave for UsbMidiKliK 
@@ -295,4 +304,22 @@ void loop()
     Serial.println(sysex[x], HEX);  
   }
 
+
+void p(char X) {
+   if (X < 16) {Serial.print("0");}
+   Serial.print(X, HEX);
+   Serial.print(" ");
+}
+
+/* Setup MASTER */
+void setup() {
+    Wire.begin();   
+    //attachInterrupt(digitalPinToInterrupt(interruptPin), blink1, FALL); 
+    Serial.begin(9600);
+    pinMode(interruptPin, INPUT);
+}
+
+//void blink1() {
+//  state = !state; 
+//}
 

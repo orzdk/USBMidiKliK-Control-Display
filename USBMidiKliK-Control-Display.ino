@@ -1,11 +1,15 @@
 /* 
-   This is the control & display slave for UsbMidiKliK 
-   Unit processes keypad codes and sends sysex to midiklik
+   This is the control & display slave for USBMidiKliK 
+   Unit display data and sends sysex from keypad
+   Unit will set PA8 (pin 29) high when it has something to say, and master will poll this
+   Information will then be requested by the master
 */
 
 #include <LiquidCrystal.h> 
-#include<Wire_slave.h> 
+#include <Wire_slave.h> 
 #include "Keypad.h"
+
+#define interruptPin 29 /* PA8 on Keypad Unit */
 
 const byte ROWS = 4;
 const byte COLS = 4;
@@ -23,21 +27,14 @@ byte colPins[COLS] = {7, 6, 5, 4};
 Keypad customKeypad = Keypad( makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS); 
 
 const int rs = PB11, en = PB10, d4 = PB0, d5 = PB1, d6 = PC13, d7 = PC14;
-LiquidCrystal messagelcd(rs, en, d4, d5, d6, d7); 
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7); 
 
 char keyBuffer[6]; 
-int keyBufferPos = 0;
-
 char keyPress;
 char lastKeyPress;
-
-int tags = 0;
-int nums = 0;
-
 char sysex[14] = {0xF0, 0x77, 0x77, 0x78, 0x0F, 0x01,};
-char sMsg;
 
-bool sysexReady = false;
+int keyBufferPos = 0, tags = 0, nums = 0;
 
 void setup() 
 {
@@ -46,41 +43,36 @@ void setup()
   Wire.onRequest(onRequestEvent);             
   
   Serial.begin(9600);
-  messagelcd.begin(16, 2);  
+  lcd.begin(16, 2);  
 
+  pinMode(interruptPin, OUTPUT);
   resetBuffer();
 }
 
-void onRequestEvent()  /* USBMidiKlik request keypad data */                          
+void onRequestEvent()                   
 {
-  if (sysexReady == true){
     Wire.write(sysex);                     
-    sysexReady = false;
-  }
 }
 
-void onReceiveEvent(int howMany) {  /* Control surface receives display back from USBMidiKlik */ 
-  while (1 < Wire.available()) { 
-    sMsg += Wire.read(); 
-  }
+void onReceiveEvent(int howMany) {
+
 }
 
 void resetBuffer()
 {
+  keyBufferPos = 0;
   tags=0;
   nums=0;
-  keyBufferPos = 0;
   memset(keyBuffer, 0, sizeof(keyBuffer));
-}
-
-void p(char X) {
-   if (X < 16) {Serial.print("0");}
-   Serial.print(X, HEX);
-   Serial.print(" ");
+  lcd.setCursor(0, 0); 
+  lcd.print("");
 }
 
 void processBuffer()
 {
+   lcd.setCursor(0, 1); 
+   lcd.print("Processing");
+
    uint16_t cableMask = 0xFFFF; /*Get from MidiKlik */
    uint16_t jackMask = 0xFFFF; /*Get from MidiKlik */
 
@@ -99,18 +91,18 @@ void processBuffer()
    sysex[12] = jackMask & 0xFF;
    sysex[13] = 0xF7;
   
-   sysexReady = true;
- 
+   digitalWrite(interruptPin, LOW); 
+   delay(500);  
  }
 
 void loop() 
 {
    delay(100);
-   Serial.println(sysexReady);
+   digitalWrite(interruptPin, HIGH); 
    keyPress = customKeypad.getKey();
    
-    if (keyPress) {
-      sysexReady = false;
+   if (keyPress) {
+      Serial.print(keyPress);
       switch (keyPress)
       {
         case NO_KEY:
@@ -118,8 +110,13 @@ void loop()
         
         case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
-          keyBuffer[keyBufferPos++] = keyPress;
           nums++;
+          keyBuffer[keyBufferPos++] = keyPress;
+          
+          lcd.setCursor(0, 0); 
+          lcd.print(keyBuffer);
+
+          if (nums == 1 && tags == 0) resetBuffer();
           if (nums == 3) resetBuffer();
           if (tags == 2 && nums == 2) processBuffer();
           break;
@@ -143,6 +140,7 @@ void loop()
      }
 
      lastKeyPress = keyPress;
+
     }
 
 }
