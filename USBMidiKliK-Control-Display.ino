@@ -53,24 +53,16 @@ void setup()
 
 void onRequestEvent()  /* USBMidiKlik request keypad data */                          
 {
-  Serial.print("Request from master");
   if (sysexReady == true){
-    Serial.print("Writing sysex");
     Wire.write(sysex);                     
     sysexReady = false;
   }
 }
 
 void onReceiveEvent(int howMany) {  /* Control surface receives display back from USBMidiKlik */ 
-  
-  Serial.print("Event from master"); 
-  
   while (1 < Wire.available()) { 
     sMsg += Wire.read(); 
   }
-  Serial.print(sMsg);         
-  messagelcd.setCursor(0, 1); 
-  messagelcd.print(sMsg);
 }
 
 void resetBuffer()
@@ -89,34 +81,27 @@ void p(char X) {
 
 void processBuffer()
 {
-  messagelcd.setCursor(0, 1); 
-  messagelcd.print("Processing");
-          
-  uint16_t cableMask = 0xFFFF; /*Get from MidiKlik */
-  uint16_t jackMask = 0xFFFF; /*Get from MidiKlik */
+   uint16_t cableMask = 0xFFFF; /*Get from MidiKlik */
+   uint16_t jackMask = 0xFFFF; /*Get from MidiKlik */
 
-  int src_cableserial_id = ((keyBuffer[1] - '0') * 10) + (keyBuffer[2] - '0'); 
-  int tgt_cableserial_id = ((keyBuffer[4] - '0') * 10) + (keyBuffer[5] - '0'); 
+   int src_cableserial_id = ((keyBuffer[1] - '0') * 10) + (keyBuffer[2] - '0'); 
+   int tgt_cableserial_id = ((keyBuffer[4] - '0') * 10) + (keyBuffer[5] - '0'); 
   
-  cableMask ^= !(keyBuffer[3] - '0') * (1UL << tgt_cableserial_id);
-  jackMask ^= (keyBuffer[3] - '0') * (1UL << tgt_cableserial_id);
+   cableMask ^= !(keyBuffer[3] - '0') * (1UL << tgt_cableserial_id);
+   jackMask ^= (keyBuffer[3] - '0') * (1UL << tgt_cableserial_id);
  
-  sysex[6] = 0xFF & (keyBuffer[0] - '0');
-  sysex[7] = 0xFF & src_cableserial_id;
-  sysex[8] = 0xFF;
-  sysex[9] = cableMask >> 8;
-  sysex[10] = cableMask & 0xFF;
-  sysex[11] = jackMask >> 8;
-  sysex[12] = jackMask & 0xFF;
-  sysex[13] = 0xF7;
+   sysex[6] = 0xFF & (keyBuffer[0] - '0');
+   sysex[7] = 0xFF & src_cableserial_id;
+   sysex[8] = 0xFF;
+   sysex[9] = cableMask >> 8;
+   sysex[10] = cableMask & 0xFF;
+   sysex[11] = jackMask >> 8;
+   sysex[12] = jackMask & 0xFF;
+   sysex[13] = 0xF7;
   
-  sysexReady = true;
-  
-  for(int a=0;a<sizeof(sysex)/sizeof(sysex[0]);a++){
-    p(sysex[a]);
-  }
-
-}
+   sysexReady = true;
+ 
+ }
 
 void loop() 
 {
@@ -125,9 +110,9 @@ void loop()
    keyPress = customKeypad.getKey();
    
     if (keyPress) {
-
-     switch (keyPress)
-     {
+      sysexReady = false;
+      switch (keyPress)
+      {
         case NO_KEY:
           break;
         
@@ -135,53 +120,26 @@ void loop()
         case '5': case '6': case '7': case '8': case '9':
           keyBuffer[keyBufferPos++] = keyPress;
           nums++;
-          messagelcd.setCursor(0, 0); 
-          messagelcd.print(keyBuffer);
-
-          messagelcd.setCursor(10, 0); 
-          messagelcd.print(tags);
-
-          messagelcd.setCursor(13, 0); 
-          messagelcd.print(nums);
-          
+          if (nums == 3) resetBuffer();
           if (tags == 2 && nums == 2) processBuffer();
           break;
 
         case '#':
           if (lastKeyPress == '#' || lastKeyPress == '*') {
               resetBuffer();
-              messagelcd.setCursor(0, 0); 
-              messagelcd.print("Error");
           } else {
              tags++;nums=0;
              keyBuffer[keyBufferPos++] = '0';
-             messagelcd.setCursor(0, 0); 
-             messagelcd.print(keyBuffer);
-                       messagelcd.setCursor(10, 0); 
-          messagelcd.print(tags);
-
-          messagelcd.setCursor(13, 0); 
-          messagelcd.print(nums);
           }
           break;
 
         case '*':
           if (lastKeyPress == '#' || lastKeyPress == '*') {
               resetBuffer();
-              messagelcd.setCursor(0, 0); 
-              messagelcd.print("Error");
           } else {
             tags++;nums=0;
             keyBuffer[keyBufferPos++] = '1';
-            messagelcd.setCursor(0, 0); 
-            messagelcd.print(keyBuffer);
-                      messagelcd.setCursor(10, 0); 
-          messagelcd.print(tags);
-
-          messagelcd.setCursor(13, 0); 
-          messagelcd.print(nums);
           }
-          
      }
 
      lastKeyPress = keyPress;
