@@ -1,4 +1,11 @@
-  /* Current Mask 1111 00000000 00000000 00000000 00000000
+  Serial.print("cablemask");
+  Serial.print(cableMask,HEX);
+  Serial.print("jackmask");
+  Serial.print(jackMask,HEX);
+  Serial.print("tgt_cableserial_id");
+  Serial.print(tgt_cableserial_id);
+
+    /* Current Mask 1111 00000000 00000000 00000000 00000000
    * We get 0 1 12 6
    * We want F0 77 77 78 01 | 00 | 00 | 00 | 0000 | 0000 | 0000 | 0000 
    *         header         | sr | id | fms| cablebmak   | jackmask 
