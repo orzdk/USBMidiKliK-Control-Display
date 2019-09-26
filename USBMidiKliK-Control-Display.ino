@@ -9,8 +9,6 @@
 #include <Wire_slave.h> 
 #include "Keypad.h"
 
-#define interruptPin 29 /* PA8 on Keypad Unit */
-
 const byte ROWS = 4;
 const byte COLS = 4;
 
@@ -36,6 +34,9 @@ char sysex[14] = {0xF0, 0x77, 0x77, 0x78, 0x0F, 0x01,};
 
 int keyBufferPos = 0, tags = 0, nums = 0;
 
+#define interruptPin 8
+int interruptPinValue;
+
 void setup() 
 {
   Wire.begin(8);  
@@ -46,12 +47,15 @@ void setup()
   lcd.begin(16, 2);  
 
   pinMode(interruptPin, OUTPUT);
+  interruptPinValue = LOW;
+
   resetBuffer();
 }
 
 void onRequestEvent()                   
 {
-    Wire.write(sysex);                     
+    Wire.write(sysex);  
+    interruptPinValue = LOW;                   
 }
 
 void onReceiveEvent(int howMany) {
@@ -91,14 +95,15 @@ void processBuffer()
    sysex[12] = jackMask & 0xFF;
    sysex[13] = 0xF7;
   
-   digitalWrite(interruptPin, LOW); 
+   currentPinValue = HIGH; 
    delay(500);  
- }
+}
 
 void loop() 
 {
-   delay(100);
-   digitalWrite(interruptPin, HIGH); 
+   delay(10);
+   digitalWrite(interruptPin, interruptPinValue); 
+    
    keyPress = customKeypad.getKey();
    
    if (keyPress) {
