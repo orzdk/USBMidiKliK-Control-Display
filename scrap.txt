@@ -1,4 +1,74 @@
+LCD STUFF
 
+
+
+//#include <LiquidCrystal.h> 
+//const int rs = PB11, en = PB10, d4 = PB0, d5 = PB1, d6 = PC13, d7 = PC14;
+//LiquidCrystal lcd(rs, en, d4, d5, d6, d7); 
+//  lcd.begin(16, 2); 
+//  lcd.setCursor(0, 0); 
+//  lcd.print("Ready")
+
+//    lcd.setCursor(0, 0); 
+//    lcd.print("msgLen");  
+//    lcd.setCursor(0, 1); 
+//    lcd.print(msgLen);
+//    lcd.setCursor(3, 1); 
+//    lcd.print(j);
+//    
+//    lcd.setCursor(5, 1); 
+//    lcd.print(pk->packet[0], HEX);
+//    
+//    lcd.setCursor(8, 1); 
+//    lcd.print(pk->packet[1], HEX);
+//    
+//    lcd.setCursor(11, 1); 
+//    lcd.print(pk->packet[2], HEX);
+//
+//    lcd.setCursor(14, 1); 
+//    lcd.print(pk->packet[3], HEX);
+
+fra erial wwrote åpacket
+
+    Serial.print(" j:");
+    Serial.println(j,HEX);
+
+    Serial.print(" msgLen:");
+    Serial.println(msgLen,HEX);
+
+    Serial.print(" packet:");
+    Serial.print(pk->packet[0],HEX);
+    
+    Serial.print(" packet:");
+    Serial.print(pk->packet[1],HEX);
+
+    Serial.print(" packet:");
+    Serial.print(pk->packet[2],HEX);
+
+    Serial.print(" packet:");
+    Serial.print(pk->packet[3],HEX);
+
+    Serial.println("--------------------------------------------------------");
+    
+
+
+
+
+
+
+// Send a midi msg to serial MIDI. 0 is Serial1.
+static void SendMidiMsgToSerial(uint8_t const *msg, uint8_t serialNo) {
+
+  if (serialNo >= SERIAL_INTERFACE_MAX ) return;
+
+  uint8_t msgLen = midiXparser::getMidiStatusMsgLen(msg[0]);
+
+  if ( msgLen > 0 ) {
+    if (msgLen >= 1 ) serialHw[serialNo]->write(msg[0]);
+    if (msgLen >= 2 ) serialHw[serialNo]->write(msg[1]);
+    if (msgLen >= 3 ) serialHw[serialNo]->write(msg[2]);
+  }
+}
 
     /* send all routes */
     //      Wire.beginTransmission(8);
@@ -323,3 +393,44 @@ void setup() {
 //  state = !state; 
 //}
 
+
+
+
+uint8_t data_to_sysex(uint8_t *data, uint8_t *sysex, uint8_t len) 
+{
+  uint8_t retlen = 0;
+  uint8_t cnt;
+  uint8_t cnt7 = 0;
+
+  sysex[0] = 0;
+  for (cnt = 0; cnt < len; cnt++) {
+    uint8_t c = data[cnt] & 0x7F;
+    uint8_t msb = data[cnt] >> 7;
+    sysex[0] |= msb << cnt7;
+    sysex[1 + cnt7] = c;
+
+    if (cnt7++ == 6) {
+      sysex += 8;
+      retlen += 8;
+      sysex[0] = 0;
+      cnt7 = 0;
+    }
+  }
+  return retlen + cnt7 + (cnt7 != 0 ? 1 : 0);
+}
+
+uint8_t sysex_to_data(uint8_t *sysex, uint8_t *data, uint8_t len) 
+{
+  uint8_t cnt;
+  uint8_t cnt2 = 0;
+  uint8_t bits = 0;
+  for (cnt = 0; cnt < len; cnt++) {
+    if ((cnt % 8) == 0) {
+      bits = sysex[cnt];
+    } else {
+      data[cnt2++] = sysex[cnt] | ((bits & 1) << 7);
+      bits >>= 1;
+    }
+  }
+  return cnt2;
+}

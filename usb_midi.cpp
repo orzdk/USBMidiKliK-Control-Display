@@ -46,8 +46,11 @@
 #include <libmaple/nvic.h>
 #include "usb_midi_device.h"
 #include <libmaple/usb.h>
-
 #include <wirish.h>
+
+#include <LiquidCrystal.h> 
+const int rs = PB11, en = PB10, d4 = PB0, d5 = PB1, d6 = PC13, d7 = PC14;
+LiquidCrystal lcd1(rs, en, d4, d5, d6, d7); 
 
 // --------------------------------------------------------------------------------------
 // USB MIDI Class
@@ -58,7 +61,7 @@
 
 // Constructor
 USBMidi::USBMidi(void) {
-
+  
 }
 
 // BEGIN - Call that function in SETUP
@@ -72,7 +75,7 @@ void USBMidi::begin() {
 #else
     usb_midi_enable(NULL, 0,0);
 #endif
-
+    lcd1.begin(16, 2);
 }
 
 void USBMidi::end(void) {
@@ -86,9 +89,14 @@ void USBMidi::end(void) {
 }
 
 void USBMidi::writePacket(const uint32_t  *pk) {
+//    lcd1.setCursor(0, 1); 
+//    lcd1.print("writePacket()");     
+//    
+//    lcd1.setCursor(0, 0); 
+//    lcd1.print(*pk,HEX); 
     this->writePackets(pk, 1);
 }
-
+       
 void USBMidi::writePackets(const void *buf, uint32_t len) {
   
     if (!this->isConnected() || !buf) {
@@ -104,6 +112,7 @@ void USBMidi::writePackets(const void *buf, uint32_t len) {
 
     while (txed < len && (millis() - start < USB_MIDI_TIMEOUT)) {
         sent = usb_midi_tx((const uint32*)buf + txed, len - txed);
+   
         txed += sent;
         if (old_txed != txed) {
             start = millis();
