@@ -1,3 +1,271 @@
+void processRouteDialBuffer()
+{
+  Serial.println("processRouteDialBuffer");
+
+    uint8_t db0 = (uint8_t)(dialBuffer[0]-'0');
+    uint8_t db1 = (uint8_t)(dialBuffer[1]-'0');
+    uint8_t src_id = (db0 * 10) + db1; 
+
+  currentBmt ^= 1UL << src_id-1;
+  
+  Serial.println("src_id");
+  Serial.println(src_id);
+    
+  Serial.print("currentBmt");
+  Serial.println(currentBmt, BIN);
+ 
+  uint8_t numChannels = countSetBits(currentBmt);
+  uint8_t sysex[numChannels];
+  uint8_t sz = numChannels + 10;
+  uint8_t datapos = 9;
+
+  Serial.print("numChannels");
+  Serial.println(numChannels);
+ 
+  Serial.print("sz");
+  Serial.println(sz);
+  
+  uint8_t sysexConfig[9] = {0xF0, 0x77, 0x77, 0x78, 0x0F, D_routeOrFilter, D_cableOrJack, D_port, D_cableOrJack_t};
+  uint8_t sysexEnd[1] = { 0xF7 };
+  uint8_t sysexComplete[sz];
+ 
+  memcpy(sysexComplete,sysexConfig,9*sizeof(uint8_t));
+  memcpy(sysexComplete+sz-1,sysexEnd,sizeof(byte));
+  sysexComplete[sz-1] = 0xF7;
+  
+  for (ii=0;ii<=15;ii++){
+    Serial.println(1UL << ii, BIN);
+    Serial.println(currentBmt, BIN);
+    if (currentBmt & (1UL << ii)){
+      Serial.println("ping");
+      Serial.println(ii);
+      sysexComplete[datapos++] = ii;
+    }
+  }
+
+  Serial.print("sysexComplete[sz-1]");
+  Serial.println(sysexComplete[sz-1], HEX);
+
+
+     
+     for (int i = 0; i<sz; i++){
+        Serial.print(i);Serial.print(" : ");
+        if (i>=0 && i<5) Serial.print("Header ");
+        if (i==5) Serial.print("RouteOrFilter ");
+        if (i==6) Serial.print("CableOrJack ");
+        if (i==7) Serial.print("Port ");
+        if (i==8) Serial.print("CableOrJackT ");
+        if (i>8) Serial.print("DATA ");
+        if ( sysexComplete[i] < 0x10 ) Serial.print("0");
+        Serial.println(sysexComplete[i], HEX);
+     }
+     
+  //dumpBufferToSerial((uint8_t*)sysexConfig,sz);
+  
+  nums = 0;
+  dialCableOrJack = 'R';
+  dialBufferPos = 0;
+  memset(dialBuffer, 0, sizeof(dialBuffer));
+  
+}
+
+
+
+
+  void processKeypad()
+{
+  displayWrite(&display, &keyPress, 0, 0, 1);
+
+  switch (keyPress)
+  {
+    case NO_KEY:
+      break;
+
+    case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+      nums++;
+      dialBuffer[dialBufferPos++] = keyPress;
+      if (nums == 3 || (nums > 0 && tags == 0)) resetBuffers();
+      if (tags == 2 && nums == 2) processDialBuffer();
+      break;
+
+    case '#': case '*':
+      if (lastKeyPress == '#' || lastKeyPress == '*') {
+        resetBuffers();
+      } else {
+        tags++; nums = 0;
+        dialBuffer[dialBufferPos++] = keyPress;
+      }
+      break;
+
+  }
+
+  lastKeyPress = keyPress;
+
+}
+
+
+
+   if (boxMode == 0){             //USBMidiKlik Remote 
+    
+   } else if (boxMode == 1){      //SysEx Bank
+    
+   } 
+char*  boxModeMenu_ITEMS1[] = {"USBMidiKlik","Sysex Bank"}; 
+   //void processDialBuffer()
+//{
+//   uint16_t cableMask = 0x0; /*Get from MidiKlik */
+//   uint16_t jackMask = 0x0; /*Get from MidiKlik */
+//   
+//   uint8_t sysex[14] = {0xF0, 0x77, 0x77, 0x78, 0x0F, 0x01,};
+//   
+//   int styp = dialBuffer[0] == '#' ? 0 : 1;
+//   int ttyp = dialBuffer[3] == '#' ? 0 : 1;
+//   
+//   int src_id = ((int)(dialBuffer[1]) * 10) + (int)(dialBuffer[2]); 
+//   int tgt_id = ((int)(dialBuffer[4]) * 10) + (int)(dialBuffer[4]); 
+//  
+//   cableMask ^= !ttyp * (1UL << tgt_id);
+//   jackMask ^= ttyp * (1UL << tgt_id);
+//   
+//   sysex[6] = 0xFF & styp;
+//   sysex[7] = 0xFF & src_id;
+//   sysex[8] = 0x0F;
+//   sysex[9] = cableMask >> 8;
+//   sysex[10] = cableMask & 0xFF;
+//   sysex[11] = jackMask >> 8;
+//   sysex[12] = jackMask & 0xFF;
+//   sysex[13] = 0xF7;
+//
+//   int i;
+//   for (i=0; i<sizeof(sysex)/sizeof(sysex[0]);i++){
+//      Serial.print(sysex[i], HEX);
+//      Serial.print(" ");
+//   }
+//   Serial.println(".......................");
+//   
+//   SendSysexToSerialAndUSB(sysex, 14);
+//   resetBuffers();
+//}
+     displayWrite(&display, ">> ",0,10,0);
+     displayWrite(&display,menus[boxModeMLevel].members[boxMode],12,10,0);
+
+     if (boxMode == 0)
+     {
+        digitalWrite(LED_RED, HIGH);
+        digitalWrite(LED_GREEN, HIGH);
+     } 
+     else if (boxMode == 1)
+     {
+        digitalWrite(LED_RED, HIGH);
+        digitalWrite(LED_GREEN, LOW);  
+     } 
+     else if (boxMode == 2)
+     {
+        digitalWrite(LED_RED, LOW);
+        digitalWrite(LED_GREEN,HIGH );   
+           
+     } else if (boxMode == 3)
+     {
+        digitalWrite(LED_RED, LOW);
+        digitalWrite(LED_GREEN, LOW);     
+     }
+
+
+#include "RingBuffer.h";
+//#define B_RING_BUFFER_PACKET_SIZE  16*sizeof(midiPacket_t)
+//RingBuffer<uint8_t,B_RING_BUFFER_PACKET_SIZE> serialRingBuffer;
+//serialRingBuffer.write((uint8_t *)&pk,sizeof(midiPacket_t));
+//serialRingBuffer.available();
+//serialRingBuffer.readBytes(pk.packet,sizeof(midiPacket_t));
+
+
+const char *a[2];
+a[0] = "blah";
+a[1] = "hmm";
+
+
+char a[2][14];
+strcpy(a[0], "blah");
+strcpy(a[1], "hmm");
+
+
+Serial.print("PCK ");
+Serial.println(pk.i,HEX);
+
+display2.setTextColor(WHITE);
+display2.setCursor(tlx,tly);
+display2.println(pk.i,HEX);
+display2.display();
+
+
+      Serial.println("");     
+
+      display2.clearDisplay();
+      display2.setTextSize(1);
+      display2.setTextColor(WHITE);
+     
+      for (int i = 0; i < serialBufferIDX; i++) {
+         display2.setCursor(i*6,0);
+         display2.println((char)serialBuffer[i]);
+      }
+      display2.display();
+
+
+
+void SendSysexToSerialAndUSB(const uint8_t *data, size_t size)
+{
+    if (data == NULL || size == 0) return;
+
+    size_t midiDataSize = (size+2)/3*4;
+    uint8_t midiData[midiDataSize];
+    const uint8_t *d = data;
+    uint8_t *p = midiData;
+    
+    size_t bytesRemaining = size;
+
+    while (bytesRemaining > 0) {
+      switch (bytesRemaining) {
+      case 1:
+          *p++ = 5;   // SysEx ends with following single byte
+          *p++ = *d;
+          *p++ = 0;
+          *p = 0;
+          bytesRemaining = 0;
+          break;
+      case 2:
+          *p++ = 6;   // SysEx ends with following two bytes
+          *p++ = *d++;
+          *p++ = *d;
+          *p = 0;
+          bytesRemaining = 0;
+          break;
+      case 3:
+          *p++ = 7;   // SysEx ends with following three bytes
+          *p++ = *d++;
+          *p++ = *d++;
+          *p = *d;
+          bytesRemaining = 0;
+          break;
+      default:
+          *p++ = 4;   // SysEx starts or continues
+          *p++ = *d++;
+          *p++ = *d++;
+          *p++ = *d++;
+          bytesRemaining -= 3;
+          break;
+      }
+    }
+
+    for (int i=0;i<midiDataSize;i+=4){
+      uint32_t package = (midiData[i+3] << 24) | (midiData[i+2] << 16)| (midiData[i+1] << 8) | (midiData[i] | (1 << 4));
+      midiPacket_t lpk = { .i = package };
+      
+      MidiUSB.writePacket(&(lpk.i));
+      
+    }
+}
+
 LCD STUFF
 
 
