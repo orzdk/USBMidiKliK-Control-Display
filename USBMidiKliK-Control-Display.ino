@@ -43,9 +43,7 @@ uint8_t UI_Function_L1 = 0;
 uint8_t UI_Function_L2 = 0;
 
 char keyPress;
-char lastKeyPress;
 char dialBuffer[3];
-char rawBuffer[256];
 uint8_t dialBufferPos = 0, nums = 0;
 
 uint8_t routeTable[] = {0, 1, 0};
@@ -542,7 +540,7 @@ void setup()
   Serial2.begin(31250);
   Serial3.begin(9600);
 
-  display.begin(SSD1306_SWITCHCAVCC, 0x3C);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   displayWrite(&display, "READY> ", 0, 0, 1);
 
   display2.begin(SSD1306_SWITCHCAPVCC, 0x3D);
