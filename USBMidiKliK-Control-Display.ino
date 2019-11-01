@@ -62,9 +62,7 @@ HardwareSerial * serialHw[SERIAL_INTERFACE_MAX] = {SERIALS_PLIST};
 uint8_t packetLen = 0;
 midiPacket_t pk { .i = 0 };
 
-uint8_t i,ii,iii = 0;
 char dialCableOrJack = 'R';
-uint16_t currentBmt = 0x0;
 
 char GLB_ScreenTitle1[20];
 char GLB_ScreenTitle2[20];
@@ -76,8 +74,6 @@ uint16_t GLB_BMT_Jack;
 uint8_t DISP_RouteOrFilter = ROUTE;
 uint8_t DISP_CableOrJack = CABLE;
 uint8_t DISP_Port = 0;
-
-uint8_t dirty = 1;
 
 static void SerialWritePacket(const midiPacket_t *pk, uint8_t serialNo)
 {
@@ -160,75 +156,35 @@ uint8_t countSetBits(uint16_t n)
     return count; 
 } 
 
-
-void currentBmtToSysex()
-{
-
-  uint8_t numChannels = countSetBits(currentBmt);
-  uint8_t sysex[numChannels];
-  uint8_t numChannel;
-  
-  
-  for (ii=0;ii<=15;ii++){
-    if (currentBmt & (1UL << ii)){
-      sysex[numChannel++] = ii;
-    }
-  }
-
-  for (iii=0;iii<numChannels;iii++){
-    Serial.println(sysex[iii]);  
-  }
-  
-}
-
 void processRouteDialBuffer()
 {
-  
   uint8_t db0 = (uint8_t)(dialBuffer[0]-'0')*10;
   uint8_t db1 = (uint8_t)(dialBuffer[1]-'0');
   uint8_t src_id = db0 + db1; 
+  uint16_t* GLB_BMT = dialCableOrJack == CABLE ? &GLB_BMT_Cable : &GLB_BMT_Jack;
 
-  currentBmt ^= 1UL << src_id-1;
+  *GLB_BMT ^= (1UL << src_id-1);
   
-  uint8_t numChannels = countSetBits(currentBmt);
+  uint8_t numChannels = countSetBits(*GLB_BMT);
   uint8_t sysex[numChannels];
   uint8_t sz = numChannels + 10;
-  uint8_t datapos = 9;
- 
-  //uint8_t sysexConfig[9] = {0xF0, 0x77, 0x77, 0x78, 0x0F, DISP_RouteOrFilter, DISP_CableOrJack, DISP_Port, D_cableOrJack_t};
+  uint8_t numChannel = 9;
   uint8_t sysexConfig[9] = {0xF0, 0x77, 0x77, 0x78, 0x0F, DISP_RouteOrFilter, DISP_CableOrJack, DISP_Port, 0x0};
   uint8_t sysexEnd[1] = { 0xF7 };
   uint8_t sysexComplete[sz];
- 
+
   memcpy(sysexComplete,sysexConfig,9*sizeof(uint8_t));
   memcpy(sysexComplete+sz-1,sysexEnd,sizeof(byte));
   
-  for (ii=0;ii<=15;ii++){
-    if (currentBmt & (1UL << ii)){
-      sysexComplete[datapos++] = ii;
+  for (int i=0;i<=15;i++){
+    if (*GLB_BMT & (1UL << i)){
+      sysexComplete[numChannel++] = i;
     }
   }
-       
-   for (int i = 0; i<sz; i++){
-      Serial.print(i);Serial.print(" : ");
-      if (i>=0 && i<5) Serial.print("Header ");
-      if (i==5) Serial.print("RouteOrFilter ");
-      if (i==6) Serial.print("CableOrJack ");
-      if (i==7) Serial.print("Port ");
-      if (i==8) Serial.print("CableOrJackT ");
-      if (i>8) Serial.print("DATA ");
-      if ( sysexComplete[i] < 0x10 ) Serial.print("0");
-      Serial.println(sysexComplete[i], HEX);
-   }
-
-     for (int i = 0; i<sz; i++){
-      if ( sysexComplete[i] < 0x10 ) Serial.print("0");
-      Serial.print(sysexComplete[i], HEX);
-      Serial.print(" ");
-     }
-   
+  
   Serial2.write(sysexComplete, sz);
   resetDialBuffer();
+  requestCurrent();
   
 }
 
@@ -259,7 +215,6 @@ void processRouteDialKeypad()
 
 }
 
-
 void displayWrite(Adafruit_SSD1306* disp, const char* txt, int x, int y, bool clr)
 {
   if (clr) disp->clearDisplay();
@@ -282,7 +237,7 @@ void displayWriteRaw(Adafruit_SSD1306* disp, char* txt, int x, int y, bool clr)
   disp->display();
 }
 
-void processSerial3Input(byte dataByte)
+void processPIStorageInput(byte dataByte)
 {
   // Dataflow from PI Storage
   // currentFlowType: 0xFD = internal system message, 0xFF = sysex
@@ -293,12 +248,12 @@ void processSerial3Input(byte dataByte)
     if (currentFlowType == 0xFD) { // Not sysex
       
       VX=0;
-      for (int i = startbyte; i < serialMessageBufferIDX - 1; i++) {
-        displayWrite(screen, &buf[i], VX, startline, 0);
+      for (int i=0; i<serialMessageBufferIDX-1; i++) {
+        displayWrite(&display2, &serialMessageBuffer[i], VX, 9, 0);
         VX += 6;
       }
 
-      serialMessageBufferIDX = 0;e
+      serialMessageBufferIDX = 0;
       memset(serialMessageBuffer, 0, sizeof(serialMessageBuffer));
     }
     
@@ -318,8 +273,7 @@ void processSerial3Input(byte dataByte)
 }
 
 void processGLB()
-{
-  
+{  
    uint8_t cableTargets = countSetBits(GLB_BMT_Cable);
    uint8_t jackTargets = countSetBits(GLB_BMT_Jack);
 
@@ -328,20 +282,18 @@ void processGLB()
    uint8_t cableTargetsTxtPos = 0;
    uint8_t jackTargetsTxtPos = 0;
    
-   uint8_t i;
-   
    displayWriteRaw(&display2, GLB_ScreenTitle1, 0, 0, 1);
    displayWriteRaw(&display2, GLB_ScreenTitle2, 0, 9, 0);
    displayWriteRaw(&display2, &serialMessageBuffer[7], 50, 9, 0);
    
-   for(i=0;i<16;i++){
+   for(int i=0;i<16;i++){
       if (GLB_BMT_Cable & (1 << i)){
         cableTargetsTxt[cableTargetsTxtPos++] = i+'0';
         cableTargetsTxt[cableTargetsTxtPos++] = ',';
       }
    }
 
-   for(i=0;i<16;i++){
+   for(int i=0;i<16;i++){
       if (GLB_BMT_Jack & (1 << i)){
         jackTargetsTxt[jackTargetsTxtPos++] = i+'0';
         jackTargetsTxt[jackTargetsTxtPos++] = ',';
@@ -367,12 +319,9 @@ void processGLB()
    
 }
 
-void processSerial2Input(byte dataByte)
+void processMidiKlikConfigDumpData(byte dataByte)
 {
 
-  Serial.print("processSerial2Input ");
-  Serial.println(dataByte,HEX);
-  
   serialMessageBuffer[serialMessageBufferIDX++] = dataByte;
 
   if (dataByte == 0xF7) { //END
@@ -387,18 +336,11 @@ void processSerial2Input(byte dataByte)
     
     GLB_Port = RCV_Port;
 
-    for (int abc=0;abc<serialMessageBufferIDX;abc++){
-      Serial.print(abc);Serial.print("sb : ");
-      Serial.println(serialMessageBuffer[abc], HEX);
-    }
-    
     if (RCV_RouteOrFilter == ROUTE) { 
       
         if (RCV_CableOrJackTgtOrFilter == CABLE){
             GLB_BMT_Cable = 0x0;
             for (int i = 9; i < serialMessageBufferIDX - 1; i++) {
-                Serial.print(i);Serial.print(" ");
-               Serial.println(serialMessageBuffer[i], HEX);
                GLB_BMT_Cable |= (1UL << serialMessageBuffer[i]);
             }
         } else 
@@ -413,15 +355,6 @@ void processSerial2Input(byte dataByte)
     if (RCV_RouteOrFilter == FILTER) { 
         GLB_Filter = RCV_CableOrJackTgtOrFilter;
     }
-
-   Serial.println(RCV_RouteOrFilter, HEX);
-   Serial.println(RCV_CableOrJackSrc, HEX);
-   Serial.println(RCV_Port, DEC);
-   Serial.println(RCV_CableOrJackTgtOrFilter,HEX);
-
-   Serial.println("GLB_BMT");
-   Serial.println(GLB_BMT_Cable,BIN);
-   Serial.println(GLB_BMT_Jack,BIN);
    
     processGLB();
   }
@@ -429,7 +362,6 @@ void processSerial2Input(byte dataByte)
     
   }
 }
-
 
 void requestChannelJackTargets(uint8_t cblOrJack, uint8_t port)
 {
@@ -443,12 +375,29 @@ void requestChannelCableTargets(uint8_t cblOrJack, uint8_t port)
   Serial2.write(sysex, 10);
 }
 
-void requestChannelFilters(uint8_t cblOrSer, uint8_t port)
+void requestChannelFilters(uint8_t cblOrJack, uint8_t port)
 {
-  uint8_t sysex[9] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x2, cblOrSer, port, 0xF7};
+  uint8_t sysex[9] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x2, cblOrJack, port, 0xF7};
   Serial2.write(sysex, 9);
 }
 
+void requestCurrent()
+{
+
+  if (DISP_RouteOrFilter == ROUTE){
+    uint8_t sysex[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x0, 0xF7};
+    Serial2.write(sysex, 10);
+
+    uint8_t sysex2[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x1, 0xF7};
+    Serial2.write(sysex, 10);
+
+  }else
+  if (DISP_RouteOrFilter == FILTER){
+    uint8_t sysex[9] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x2, DISP_CableOrJack, DISP_Port, 0xF7};
+    Serial2.write(sysex, 9);
+  }
+  
+}
 
 void processScreens()
 {
@@ -554,14 +503,14 @@ void processSerial()
   if (Serial2.available() > 0)
   {
     inByte = Serial2.read();
-    processSerial2Input(inByte);
+    processMidiKlikConfigDumpData(inByte);
 
   }
 
   if (Serial3.available() > 0)
   {
     inByte = Serial3.read();
-    processSerial3Input(inByte);
+    processPIStorageInput(inByte);
   }
 
 }
@@ -593,7 +542,7 @@ void setup()
   Serial2.begin(31250);
   Serial3.begin(9600);
 
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.begin(SSD1306_SWITCHCAVCC, 0x3C);
   displayWrite(&display, "READY> ", 0, 0, 1);
 
   display2.begin(SSD1306_SWITCHCAPVCC, 0x3D);
