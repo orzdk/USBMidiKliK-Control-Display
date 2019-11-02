@@ -22,11 +22,6 @@ ToggleButton tbYellow(B_YELLOW, false, 250, false, true);
 
 Keypad customKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, 4, 4);
 
-enum rf {ROUTE=0x1, FILTER=0x2};
-enum cj {CABLE=0x0, JACK=0x1};
-enum m1 {USBMIDIKLIK=0x0, SYSEXBANK=0x1};
-enum m21 {LOADS=0x0, SAVES=0x1};
-
 struct menu {
   char name[12];
   char *members[20];
@@ -42,11 +37,15 @@ uint8_t ML2[2] = {2, 2};
 uint8_t UI_Function_L1 = 0;
 uint8_t UI_Function_L2 = 0;
 
+enum rf {ROUTE=0x1, FILTER=0x2};
+enum cj {CABLE=0x0, JACK=0x1};
+enum m1 {USBMIDIKLIK=0x0, SYSEXBANK=0x1};
+enum m21 {LOADS=0x0, SAVES=0x1};
+enum m22 {ROUTES=0x0, FILTERS=0x1};
+
 char keyPress;
 char dialBuffer[3];
 uint8_t dialBufferPos = 0, nums = 0;
-
-uint8_t routeTable[] = {0, 1, 0};
 uint8_t VX = 0, VY = 0;
 
 byte currentFlowType = 0x0;
@@ -135,14 +134,6 @@ void SysexSend(uint8_t buff[], uint16_t sz)
   }
 }
 
-void resetDialBuffer()
-{
-  nums = 0;
-  dialCableOrJack = 'R';
-  dialBufferPos = 0;
-  memset(dialBuffer, 0, sizeof(dialBuffer));
-}
-
 uint8_t countSetBits(uint16_t n) 
 { 
     uint8_t count = 0; 
@@ -153,6 +144,14 @@ uint8_t countSetBits(uint16_t n)
     } 
     return count; 
 } 
+
+void resetRouteDialBuffer()
+{
+  nums = 0;
+  dialCableOrJack = 'R';
+  dialBufferPos = 0;
+  memset(dialBuffer, 0, sizeof(dialBuffer));
+}
 
 void processRouteDialBuffer()
 {
@@ -181,7 +180,7 @@ void processRouteDialBuffer()
   }
   
   Serial2.write(sysexComplete, sz);
-  resetDialBuffer();
+  resetRouteDialBuffer();
   requestCurrent();
   
 }
@@ -322,8 +321,11 @@ void processMidiKlikConfigDumpData(byte dataByte)
 
   serialMessageBuffer[serialMessageBufferIDX++] = dataByte;
 
+  Serial.print("SER: ");Serial.println(dataByte,HEX);
+
   if (dataByte == 0xF7) { //END
 
+    Serial.flush();
     uint8_t RCV_RouteOrFilter = serialMessageBuffer[5];
     uint8_t RCV_CableOrJackSrc = serialMessageBuffer[6];
     uint8_t RCV_Port = serialMessageBuffer[7];
@@ -361,33 +363,21 @@ void processMidiKlikConfigDumpData(byte dataByte)
   }
 }
 
-void requestChannelJackTargets(uint8_t cblOrJack, uint8_t port)
-{
-  uint8_t sysex[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, cblOrJack, port, 0x1, 0xF7};
-  Serial2.write(sysex, 10);
-}
-
-void requestChannelCableTargets(uint8_t cblOrJack, uint8_t port)
-{
-  uint8_t sysex[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, cblOrJack, port, 0x0, 0xF7};
-  Serial2.write(sysex, 10);
-}
-
-void requestChannelFilters(uint8_t cblOrJack, uint8_t port)
-{
-  uint8_t sysex[9] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x2, cblOrJack, port, 0xF7};
-  Serial2.write(sysex, 9);
-}
-
 void requestCurrent()
 {
-
+  Serial.println("Request Current");
+  Serial.println(DISP_RouteOrFilter);
+  Serial.println(DISP_CableOrJack);
+  Serial.println(DISP_Port);
+  
   if (DISP_RouteOrFilter == ROUTE){
-    uint8_t sysex[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x0, 0xF7};
-    Serial2.write(sysex, 10);
+    
+//    uint8_t sysex[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x0, 0xF7};
+//    Serial2.write(sysex, 10);
 
     uint8_t sysex2[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x1, 0xF7};
-    Serial2.write(sysex, 10);
+    for (int i=0;i<10;i++) Serial.println(sysex2[i],HEX);
+    Serial2.write(sysex2, 10);
 
   }else
   if (DISP_RouteOrFilter == FILTER){
@@ -399,20 +389,25 @@ void requestCurrent()
 
 void processScreens()
 {
- 
-  Serial.println("processScreens()");
 
   displayWrite(&display, menus[UI_Function_L1].name, 0, 0, 1);
   displayWrite(&display, menus[UI_Function_L1].members[UI_Function_L2], 0, 9, 0);
 
+    if ( UI_Function_L1 == USBMIDIKLIK ) {
+      
+      if (UI_Function_L2==ROUTES){
+          DISP_RouteOrFilter = ROUTE;
+      }else if (UI_Function_L2==FILTERS){
+          DISP_RouteOrFilter = FILTER;
+      }
+  }
+  else    
   if ( UI_Function_L1 == SYSEXBANK ) {
       
       if (UI_Function_L2==LOADS){
         
         displayWrite(&display, "<-[B][Y]->", 0, 27, 0);
         displayWrite(&display, "[RED] to send", 0, 36, 0);
-        
-        Serial3.print(0x1);
         
       } else {
         if (UI_Function_L2==SAVES){
@@ -426,7 +421,7 @@ void processScreens()
 
 void menuSelect()
 {
-  requestChannelCableTargets(DISP_CableOrJack, DISP_Port); 
+  requestCurrent(); 
 }
 
 void menuNext()
@@ -455,18 +450,15 @@ void processButtons()
   
   if (tbYellow.changed()) {
 
-    if ( UI_Function_L1 == SAVES ) {
+    if ( UI_Function_L1 == USBMIDIKLIK ) {
 
-      DISP_RouteOrFilter = UI_Function_L2+1;
-      if (DISP_Port != 15) DISP_Port++;
+      if (DISP_Port != 15) DISP_Port++; else {
+        DISP_CableOrJack = !DISP_CableOrJack;
+        DISP_Port = 0;
+      }
+      requestCurrent();
       
-      requestChannelCableTargets(DISP_CableOrJack, DISP_Port);
-      requestChannelJackTargets(DISP_CableOrJack, DISP_Port);
-      
-    } else if ( UI_Function_L1 == LOADS ) {
-      
-      displayWrite(&display, "Selecting file", 0, 0, 1);
-      displayWrite(&display, "[BLUE] to send", 0, 0, 0);
+    } else if ( UI_Function_L1 == SYSEXBANK ) {
       Serial3.print(0x1);
     }
 
@@ -474,16 +466,14 @@ void processButtons()
 
   if (tbBlue.changed()) {
 
-    if ( UI_Function_L1 == SAVES ) {
+    if ( UI_Function_L1 == USBMIDIKLIK ) {
+      if (DISP_Port != 0) DISP_Port--; else {
+        DISP_CableOrJack = !DISP_CableOrJack;
+        DISP_Port = 15;        
+      }
+      requestCurrent();
 
-      DISP_RouteOrFilter = UI_Function_L2+1;
-      if (DISP_Port != 0) DISP_Port--;
-      
-      requestChannelCableTargets(DISP_CableOrJack, DISP_Port);
-      requestChannelJackTargets(DISP_CableOrJack, DISP_Port);
-
-    } else if ( UI_Function_L1 == LOADS ) {
-      displayWrite(&display, "Sending file", 0, 0, 1);
+    } else if ( UI_Function_L1 == SYSEXBANK ) {
       Serial3.print(0x2);
     }
 
@@ -521,7 +511,8 @@ void loop()
 
 void setup()
 {
-  Serial.println(sizeof(HEX));
+
+  
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
 
@@ -539,13 +530,22 @@ void setup()
   Serial1.begin(31250);
   Serial2.begin(31250);
   Serial3.begin(9600);
-
+  delay(1000);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   displayWrite(&display, "READY> ", 0, 0, 1);
 
   display2.begin(SSD1306_SWITCHCAPVCC, 0x3D);
   displayWrite(&display2, "READY> ", 0, 0, 1);
 
+  Serial.println("DISP_CableOrJack");
+  Serial.println(DISP_CableOrJack);
+  DISP_CableOrJack = !DISP_CableOrJack;
+   Serial.println("DISP_CableOrJack");
+  Serial.println(DISP_CableOrJack); 
+    DISP_CableOrJack = !DISP_CableOrJack;
+   Serial.println("DISP_CableOrJack");
+  Serial.println(DISP_CableOrJack); 
+  
 #ifdef MIDIUSB_ENABLE
   usb_midi_set_vid_pid(0x2710, 0x1973);
   usb_midi_set_product_string("sysEXBOX");

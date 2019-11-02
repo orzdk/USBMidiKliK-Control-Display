@@ -1,3 +1,25 @@
+
+void requestChannelJackTargets(uint8_t cblOrJack, uint8_t port)
+{
+  uint8_t sysex[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, cblOrJack, port, 0x1, 0xF7};
+  Serial2.write(sysex, 10);
+}
+
+void requestChannelCableTargets(uint8_t cblOrJack, uint8_t port)
+{
+  uint8_t sysex[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, cblOrJack, port, 0x0, 0xF7};
+  Serial2.write(sysex, 10);
+}
+
+void requestChannelFilters(uint8_t cblOrJack, uint8_t port)
+{
+  uint8_t sysex[9] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x2, cblOrJack, port, 0xF7};
+  Serial2.write(sysex, 9);
+}
+
+
+
+
 void processRouteDialBuffer()
 {
   Serial.println("processRouteDialBuffer");
