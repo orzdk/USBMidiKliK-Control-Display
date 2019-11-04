@@ -62,18 +62,20 @@ midiPacket_t pk { .i = 0 };
 
 uint8_t dialCableOrJack = CABLE;
 
-char GLB_ScreenTitle1[20] = "-ROUTES-";
-char GLB_ScreenTitle2[20] = "CABLE: ";
+char GLB_ScreenTitle1[20] = "";
+char GLB_ScreenTitle2[20] = "";
+
 uint8_t GLB_Port = 0;
 uint8_t GLB_Filter = 0;
+
 uint16_t GLB_BMT_Cable;
 uint16_t GLB_BMT_Jack;
+
 char GLB_Filter_XO[4];
 
 uint8_t DISP_CableOrJack = CABLE;
 uint8_t DISP_Port = 0;
 bool clearDisp = true;
-
 
 /* Utilities */
 
@@ -127,14 +129,20 @@ uint8_t countSetBits(uint16_t n)
     return count; 
 } 
 
-void goRed()
+int getdigit(int num, int n)
 {
-   digitalWrite(LED_RED, HIGH);
-}
-
-void goGreen()
-{
-    digitalWrite(LED_GREEN, HIGH);
+    int r, t1, t2;
+ 
+    t1 = pow(10, n+1);
+    r = num % t1;
+ 
+    if (n > 0)
+    {
+        t2 = pow(10, n);
+        r = r / t2;
+    }
+ 
+    return r;
 }
 
 /* MIDI */
@@ -185,7 +193,7 @@ void sysexForward(byte dataByte)
   }
 }
 
-void sysexSend(uint8_t buff[], uint16_t sz) 
+void sysexSendToUSB(uint8_t buff[], uint16_t sz) 
 {
   midiPacket_t pk { .i = 0};
   uint8_t b=0;
@@ -203,15 +211,19 @@ void sysexSend(uint8_t buff[], uint16_t sz)
 
 void requestChannelDump()
 {
+  digitalWrite(LED_BLUE, HIGH);
+  digitalWrite(LED_RED, HIGH);
+  digitalWrite(LED_GREEN, HIGH);
+  
   uint8_t sysex_cableTargets[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x0, 0xF7};
   uint8_t sysex_jackTargets[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x1, 0xF7};
   uint8_t sysex_filterTargets[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x2, DISP_CableOrJack, DISP_Port, 0x0, 0xF7};   
   
   clearDisp = true;
   
-  Serial2.write(sysex_cableTargets, 10);delay(50);
-  Serial2.write(sysex_jackTargets, 10);delay(50);
-  Serial2.write(sysex_filterTargets, 10);delay(50);   
+  Serial2.write(sysex_cableTargets, 10);delay(100);Serial.flush();
+  Serial2.write(sysex_jackTargets, 10);delay(100);Serial.flush();
+  Serial2.write(sysex_filterTargets, 10);delay(100);Serial.flush();
   
 }
 
@@ -220,7 +232,6 @@ void requestChannelDump()
 void resetRouteDialBuffer()
 {
   nums = 0;
-  dialCableOrJack = CABLE;
   dialBufferPos = 0;
   memset(dialBuffer, 0, sizeof(dialBuffer));
 }
@@ -250,13 +261,10 @@ void processRouteDialBuffer()
       sysexComplete[numChannel++] = i;
     }
   }
-
-  for (int i=0;i<sz;i++){
-    Serial.println(sysexComplete[i],HEX);
-  }
-  
+ 
   Serial2.write(sysexComplete, sz);
-  delay(50);
+  delay(250);
+  
   resetRouteDialBuffer();
   requestChannelDump();
   
@@ -264,7 +272,6 @@ void processRouteDialBuffer()
 
 void processRouteDialKeypress()
 {
-  displayWrite(&display, &keyPress, 0, 0, 1);
 
   switch (keyPress)
   {
@@ -293,7 +300,6 @@ void processRouteDialKeypress()
 
 void processScreen1()
 {
-
   displayWrite(&display, menus[UI_Function_L1].name, 0, 0, 1);
   displayWrite(&display, menus[UI_Function_L1].members[UI_Function_L2], 0, 9, 0);
 
@@ -346,36 +352,54 @@ void processScreen2()
           
           clearDisp = false;
        }
-    
+  
        if (cableTargetCount){
-         VX=0; 
-       
-         for(int i=0;i<16;i++){
-            if (GLB_BMT_Cable & (1 << i)){
-              cableTargetsTxt[cableTargetsTxtPos++] = i+'0';
-              cableTargetsTxt[cableTargetsTxtPos++] = ' ';
+             
+         for(uint8_t i=0;i<16;i++){
+            if (GLB_BMT_Cable & (1 << i)){        
+              char dig1 = getdigit(i,0);
+              char dig2 = getdigit(i,1); 
+              if (i>10){       
+                cableTargetsTxt[cableTargetsTxtPos++] = dig2+'0';
+                cableTargetsTxt[cableTargetsTxtPos++] = dig1+'0';
+                cableTargetsTxt[cableTargetsTxtPos++] = ' ';
+              } else {
+                cableTargetsTxt[cableTargetsTxtPos++] = dig1+'0';
+                cableTargetsTxt[cableTargetsTxtPos++] = ' ';
+              }
             }
          } 
+
+         VX=0;
          for (int i=0;i<cableTargetCount; i++) {
-            displayWrite(&display2, &cableTargetsTxt[i], VX, 27, 0);
+            displayWriteRaw(&display2, &cableTargetsTxt[i], VX, 27, 0);
             VX+=6;
-         }     
+         }
+              
        }
        
-       if (jackTargetCount){
-         VX=0;     
-             
+       if (jackTargetCount){        
          for(int i=0;i<16;i++){
             if (GLB_BMT_Jack & (1 << i)){
-              jackTargetsTxt[jackTargetsTxtPos++] = i+'0';
-              jackTargetsTxt[jackTargetsTxtPos++] = ' ';
+              char dig1 = getdigit(i,0);
+              char dig2 = getdigit(i,1);
+              if (i>10){       
+                jackTargetsTxt[jackTargetsTxtPos++] = dig2+'0';
+                jackTargetsTxt[jackTargetsTxtPos++] = dig1+'0';
+                jackTargetsTxt[jackTargetsTxtPos++] = ' ';
+              } else {
+                jackTargetsTxt[jackTargetsTxtPos++] = dig1+'0';
+                jackTargetsTxt[jackTargetsTxtPos++] = ' ';
+              }              
             }
          } 
          
+         VX=0;          
          for (int i=0;i<jackTargetCount; i++) {
             displayWrite(&display2, &jackTargetsTxt[i], VX, 45, 0);
             VX+=6;
          }    
+         
        }
        
     } else
@@ -394,7 +418,6 @@ void processScreen2()
 void processIncomingPIStorageByte(byte dataByte)
 {
   if (dataByte == 0xFF) { //END
-    goGreen();
     if (currentFlowType == 0xFD) { 
       
       strncpy(GLB_ScreenTitle1, "Sysex Bank -> ", sizeof(GLB_ScreenTitle1));
@@ -407,9 +430,7 @@ void processIncomingPIStorageByte(byte dataByte)
     currentFlowType = 0;
 
   } else if (dataByte == 0xFD || dataByte == 0xFE) { //START
-    goRed();
-    currentFlowType = dataByte;
-    
+    currentFlowType = dataByte;    
   } else {
     if (currentFlowType == 0xFD) {
       serialMessageBuffer[serialMessageBufferIDX++] = dataByte;
@@ -425,50 +446,57 @@ void processIncomingSerial2Byte(byte dataByte)
 {
   serialMessageBuffer[serialMessageBufferIDX++] = dataByte;
 
-  if (dataByte == 0xF7) { //END
-      goGreen();
-      serialMessageBufferIDX = 0;
+  if (UI_Function_L1 == USBMIDIKLIK) {//Received data is cable/jack routing
+    
+      if (dataByte == 0xF7) { //END
+          serialMessageBufferIDX = 0;
+          
+          uint8_t RCV_RouteOrFilter = serialMessageBuffer[5];
+          uint8_t RCV_CableOrJackSrc = serialMessageBuffer[6];
+          uint8_t RCV_Port = serialMessageBuffer[7];
+          uint8_t RCV_CableOrJackTgtOrFilter = serialMessageBuffer[8];
+     
+          strncpy(GLB_ScreenTitle1, "ROUTE", sizeof(GLB_ScreenTitle1));
+          strncpy(GLB_ScreenTitle2, RCV_CableOrJackSrc == CABLE ? "CABLE" : "JACK", sizeof(GLB_ScreenTitle2));
+          
+          GLB_Port = RCV_Port;
       
-      uint8_t RCV_RouteOrFilter = serialMessageBuffer[5];
-      uint8_t RCV_CableOrJackSrc = serialMessageBuffer[6];
-      uint8_t RCV_Port = serialMessageBuffer[7];
-      uint8_t RCV_CableOrJackTgtOrFilter = serialMessageBuffer[8];
- 
-      strncpy(GLB_ScreenTitle1, "ROUTE", sizeof(GLB_ScreenTitle1));
-      strncpy(GLB_ScreenTitle2, RCV_CableOrJackSrc == CABLE ? "CABLE" : "JACK", sizeof(GLB_ScreenTitle2));
-      
-      GLB_Port = RCV_Port;
+          if (RCV_RouteOrFilter == ROUTE) { 
+    
+              uint8_t dtstrt = 9;
+              
+              if (RCV_CableOrJackTgtOrFilter == CABLE){
+                  digitalWrite(LED_BLUE, LOW);
+                  GLB_BMT_Cable = 0x0;
+                  while (serialMessageBuffer[dtstrt] != 0xF7){
+                    GLB_BMT_Cable |= (1 << serialMessageBuffer[dtstrt++]);
+                  }
+              } else 
+              if (RCV_CableOrJackTgtOrFilter == JACK){
+                  digitalWrite(LED_RED, LOW);
+                  GLB_BMT_Jack = 0x0;
+                  while (serialMessageBuffer[dtstrt] != 0xF7){
+                    GLB_BMT_Jack |= (1 << serialMessageBuffer[dtstrt++]);
+                  }
+              }
+             
+              
+          } else
+          if (RCV_RouteOrFilter == FILTER) {  
+              digitalWrite(LED_GREEN, LOW);
+              GLB_Filter = RCV_CableOrJackTgtOrFilter;
+              for (int i=0;i<4;i++){
+                GLB_Filter_XO[i] = RCV_CableOrJackTgtOrFilter & (1 << i) ? 'X' : '-';
+              }
+          }
+    
+          processScreen2();
+          
+      } 
+  }
+  else if (UI_Function_L1 == SYSEXBANK) {//received data is data to forward to pi storage 
   
-      if (RCV_RouteOrFilter == ROUTE) { 
-
-          uint8_t dtstrt = 9;
-          
-          if (RCV_CableOrJackTgtOrFilter == CABLE){
-              GLB_BMT_Cable = 0x0;
-              while (serialMessageBuffer[dtstrt] != 0xF7){
-                GLB_BMT_Cable |= (1 << serialMessageBuffer[dtstrt++]);
-              }
-          } else 
-          if (RCV_CableOrJackTgtOrFilter == JACK){
-              GLB_BMT_Jack = 0x0;
-              while (serialMessageBuffer[dtstrt] != 0xF7){
-                GLB_BMT_Jack |= (1 << serialMessageBuffer[dtstrt++]);
-              }
-          }
-         
-          
-      } else
-      if (RCV_RouteOrFilter == FILTER) {  
-          GLB_Filter = RCV_CableOrJackTgtOrFilter;
-          for (int i=0;i<4;i++){
-            GLB_Filter_XO[i] = RCV_CableOrJackTgtOrFilter & (1 << i) ? 'X' : '-';
-          }
-      }
-
-      processScreen2();
-      
-  } else {
-    goRed();
+    
   }
 
 }
@@ -482,16 +510,14 @@ void menuNext()
   
   if ( UI_Function_L1 == USBMIDIKLIK ) {
       digitalWrite(LED_YELLOW, HIGH);
-      digitalWrite(LED_BLUE, LOW);
-
   } else if ( UI_Function_L1 == SYSEXBANK ) {
       digitalWrite(LED_YELLOW, LOW);
-      digitalWrite(LED_BLUE, HIGH);
+      if (UI_Function_L2 == SAVES){
+        Serial3.print(0x4); //rec mode 
+      } else if (UI_Function_L2 == LOADS){
+        Serial3.print(0x5); //load mode
+      }
       
-      display2.clearDisplay();
-      display2.display();
-    
-      Serial3.print(0x1);
   }
   
 }
@@ -511,35 +537,42 @@ void processButtons()
   }
   
   if (tbRed.changed()) {
-     requestChannelDump(); 
+      if ( UI_Function_L1 == USBMIDIKLIK ) {
+        DISP_CableOrJack = !DISP_CableOrJack;
+        DISP_Port = 0;
+        requestChannelDump(); 
+      } else if ( UI_Function_L1 == SYSEXBANK ) {
+        Serial3.print(0x5);  //request currently selected filename
+      }
   }
   
   if (tbYellow.changed()) {
+    
     if ( UI_Function_L1 == USBMIDIKLIK ) {
-      if (DISP_Port != 15) DISP_Port++; else {
-        DISP_CableOrJack = !DISP_CableOrJack;
-        DISP_Port = 0;
-      }
+      if (DISP_Port != 15) DISP_Port++; 
       requestChannelDump();
     } else if ( UI_Function_L1 == SYSEXBANK ) {
-      Serial3.print(0x1);
+      Serial3.print(0x1); //request currently selected file++
     }
+    
   }
 
   if (tbBlue.changed()) {
     if ( UI_Function_L1 == USBMIDIKLIK ) {
-      if (DISP_Port != 0) DISP_Port--; else {
-        DISP_CableOrJack = !DISP_CableOrJack;
-        DISP_Port = 0;        
-      }
+      if (DISP_Port != 0) DISP_Port--; 
       requestChannelDump();
     } else if ( UI_Function_L1 == SYSEXBANK ) {
-      Serial3.print(0x2);
+      Serial3.print(0x2); //request currently selected file--
     }
   }
 
   keyPress = customKeypad.getKey();
-  if (keyPress) processRouteDialKeypress();
+  
+  if ( keyPress && UI_Function_L1 == USBMIDIKLIK ) {
+     processRouteDialKeypress();
+  } else if ( UI_Function_L1 == SYSEXBANK ) {
+
+  }
   
 }
 
