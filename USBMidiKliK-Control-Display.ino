@@ -621,7 +621,9 @@ void setup()
   Serial2.begin(31250);
   Serial3.begin(9600);
   delay(4000);
-  
+
+  digitalWrite(LED_YELLOW, HIGH);
+   
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   displayWrite(&display, "READY> ", 0, 0, 1);
 
