@@ -9,6 +9,9 @@
 #include "USBMidiKliK-Control-Display.h"
 #include "klikpins.h"
 
+#include <libMMM.h>
+#include "calc.h"
+
 #define OLED_RESET -1
 #define LED_PULSE_MILLIS  500
 #define MIDIUSB_ENABLE__NOPE
@@ -28,8 +31,14 @@ struct menu {
   char *members[20];
 };
 
+struct transformerInfo{
+  uint8_t transformerByte[7];
+};
+
+transformerInfo GLB_Transformers[3];
+
 const struct menu menus[] = {
-  {"USBMidiKlik", {"Routes"} },
+  {"USBMidiKlik", {"Routes", "Transformers"} },
   {"Sysex Bank",  {"Load", "Save"} }
 };
 
@@ -38,11 +47,12 @@ uint8_t ML2[2] = {1, 2};
 uint8_t UI_Function_L1 = 0;
 uint8_t UI_Function_L2 = 0;
 
-enum rf {ROUTE=0x1, FILTER=0x2};
-enum cj {CABLE=0x0, JACK=0x1};
-enum m1 {USBMIDIKLIK=0x0, SYSEXBANK=0x1};
-enum m21 {LOADS=0x0, SAVES=0x1};
-enum m22 {ROUTES=0x0, FILTERS=0x1};
+enum rf  { ROUTE=0x1, FILTER=0x2, TRANSFORMER=0x3 };
+enum cj  { CABLE=0x0, JACK=0x1 };
+enum m1  { USBMIDIKLIK=0x0, SYSEXBANK=0x1 };
+enum m21 { LOADS=0x0, SAVES=0x1 };
+enum m22 { ROUTES=0x0, TRANSFORMERS=0x1 };
+enum pic { BROWSE_FORWARD=0x1, BROWSE_BACKWARD=0x2, LOAD_FILE=0x3, REC_MODE=0x4, DISPLAY_CURRENT=0x5 };
 
 char keyPress;
 char dialBuffer[3];
@@ -64,22 +74,20 @@ uint8_t dialCableOrJack = CABLE;
 
 char GLB_ScreenTitle1[20] = "";
 char GLB_ScreenTitle2[20] = "";
-
 uint8_t GLB_Port = 0;
 uint8_t GLB_Filter = 0;
-
 uint16_t GLB_BMT_Cable;
 uint16_t GLB_BMT_Jack;
-
 char GLB_Filter_XO[4];
 
 uint8_t DISP_CableOrJack = CABLE;
 uint8_t DISP_Port = 0;
+uint8_t DISP_Slot = 0;
 
 uint8_t pendingConfigPackets;
 bool cableJackSelect = false;
 
-/* Utilities */
+/* Display */
 
 void displayWrite(Adafruit_SSD1306* disp, const char* txt, int x, int y, bool clr)
 {
@@ -120,36 +128,9 @@ void displayBlank(Adafruit_SSD1306* disp)
    disp->display();  
 }
 
-uint8_t countSetBits(uint16_t n) 
-{ 
-    uint8_t count = 0; 
-    while (n) 
-    { 
-      n &= (n-1); 
-      count++; 
-    } 
-    return count; 
-} 
-
-uint8_t getdigit(uint8_t num, uint8_t n)
-{
-    uint8_t r, t1, t2;
- 
-    t1 = pow(10, n+1);
-    r = num % t1;
- 
-    if (n > 0)
-    {
-        t2 = pow(10, n);
-        r = r / t2;
-    }
- 
-    return r;
-}
-
 /* MIDI */
 
-static void SerialWritePacket(const midiPacket_t *pk, uint8_t serialNo)
+void SerialWritePacket(const midiPacket_t *pk, uint8_t serialNo)
 {
   uint8_t msgLen = CINToLenTable[pk->packet[0] & 0x0F];
   serialHw[serialNo]->write(&pk->packet[1], msgLen);
@@ -197,39 +178,53 @@ void sysexForward(byte dataByte)
 
 void sysexSendToUSB(uint8_t buff[], uint16_t sz) 
 {
-  midiPacket_t pk { .i = 0};
+  midiPacket_t pk { .i = 0 };
   uint8_t b=0;
   bool endPk;
   for ( uint16_t i = 0; i != sz ; i ++ ) {
     pk.packet[++b] = buff[i];
-    endPk = ( i+2 > sz );
-    if (b == 3 ||  endPk ) {
-        pk.packet[0]  = endPk ?  b + 4 : 4 ;
+    endPk = ( i + 2 > sz );
+    if (b == 3 || endPk ) {
+        pk.packet[0] = endPk ? b + 4 : 4 ;
         MidiUSB.writePacket(&pk.i);
         b=0; pk.i = 0;
     }
   }
 }
 
-void requestChannelDump()
+void requestChannelRouteDump()
 {
   digitalWrite(LED_BLUE, HIGH);
   digitalWrite(LED_RED, HIGH);
   digitalWrite(LED_GREEN, HIGH);
-
-Serial.println("flodhest");
-  Serial.println(DISP_CableOrJack);
-  Serial.println(DISP_Port);
-  
-  uint8_t sysex_cableTargets[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x0, 0xF7};
-  uint8_t sysex_jackTargets[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x1, DISP_CableOrJack, DISP_Port, 0x1, 0xF7};
-  uint8_t sysex_filterTargets[10] = {0xF0, 0x77, 0x77, 0x78, 0x04, 0x2, DISP_CableOrJack, DISP_Port, 0x0, 0xF7};   
+ 
+  uint8_t sysex_cableTargets[10] =  { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x1, DISP_CableOrJack, DISP_Port, 0x0, 0xF7 };
+  uint8_t sysex_jackTargets[10] =   { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x1, DISP_CableOrJack, DISP_Port, 0x1, 0xF7 };
+  uint8_t sysex_filterTargets[10] = { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x2, DISP_CableOrJack, DISP_Port, 0x0, 0xF7 };   
   
   pendingConfigPackets = 3;
   
   Serial2.write(sysex_cableTargets, 10);delay(100);Serial.flush();
   Serial2.write(sysex_jackTargets, 10);delay(100);Serial.flush();
   Serial2.write(sysex_filterTargets, 10);delay(100);Serial.flush();
+  
+}
+
+void requestChannelTransformerDump()
+{
+  digitalWrite(LED_BLUE, HIGH);
+  digitalWrite(LED_RED, HIGH);
+  digitalWrite(LED_GREEN, HIGH);
+  
+  uint8_t sysex_transformers_slot_1[10] = { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x3, DISP_CableOrJack, DISP_Port, 0x0, 0xF7 }; 
+  uint8_t sysex_transformers_slot_2[10] = { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x3, DISP_CableOrJack, DISP_Port, 0x1, 0xF7 }; 
+  uint8_t sysex_transformers_slot_3[10] = { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x3, DISP_CableOrJack, DISP_Port, 0x2, 0xF7 }; 
+
+  pendingConfigPackets = 3;
+
+  Serial2.write(sysex_transformers_slot_1, 10);delay(100);Serial.flush();
+  Serial2.write(sysex_transformers_slot_2, 10);delay(100);Serial.flush();
+  Serial2.write(sysex_transformers_slot_3, 10);delay(100);Serial.flush();
   
 }
 
@@ -243,11 +238,29 @@ void resetRouteDialBuffer()
   memset(dialBuffer, 0, sizeof(dialBuffer));
 }
 
+uint8_t bufferDecCharToInt(*dialBuffer, uint8_t offset)
+{
+  uint8_t db10 = (uint8_t)(dialBuffer[offset]-'0') * 10;
+  uint8_t db1 = (uint8_t)(dialBuffer[offset+1]-'0');
+
+  return db10 + db1;;
+}
+
+uint8_t bufferHexCharToHex(*dialBuffer, uint8_t offset){
+
+  char msbchar = dialBuffer[offset];
+  char lsbchar = dialBuffer[offset+1];
+
+  uint8_t msb = (msbchar & 15) +( msbchar >> 6) * 9;
+  uint8_t lsb = (lsbchar & 15) +( lsbchar >> 6) * 9;
+
+  return (msb << 4) | lsb;
+}
+
 void processRouteDialBuffer()
 {
-   uint8_t db10 = (uint8_t)(dialBuffer[0]-'0')*10;
-   uint8_t db1 = (uint8_t)(dialBuffer[1]-'0');
-   uint8_t src_id = db10 + db1; 
+  
+  uint8_t src_id = bufferTxtToInt(&dialBuffer,0);
 
   Serial.println("cableJackSelect in processRouteDialBuffer");
   Serial.println(cableJackSelect);
@@ -258,7 +271,7 @@ void processRouteDialBuffer()
     DISP_Port = src_id;
     cableJackSelect = false;    
     digitalWrite(LED_YELLOW, LOW);
-    requestChannelDump();
+    requestChannelRouteDump();
     
   } else {
     
@@ -287,24 +300,44 @@ void processRouteDialBuffer()
     delay(250);
     
     resetRouteDialBuffer();
-    requestChannelDump();
+    requestChannelRouteDump();
   }
 }
 
-void toggleFilter(uint8_t filterBit){
-  
-    GLB_Filter ^= (1 << filterBit);
-    uint8_t sysexConfig[10] = {0xF0, 0x77, 0x77, 0x78, 0x0F, 0x2, DISP_CableOrJack, DISP_Port, GLB_Filter, 0xF7};
+void processTransformerDialBuffer()
+{
 
-    Serial2.write(sysexConfig, 10);
-    delay(250);
+  uint8_t setOrClear = 0x1;
+  uint8_t slot = bufferCharToHex(&dialBuffer, 0);
+  uint8_t command = bufferCharToHex(&dialBuffer, 2);
+  uint8_t x,y,z,lbound,ubound;
+
+  if (command != evm){
+      x = bufferDecCharToInt(&dialBuffer, 4);
+      y = bufferDecCharToInt(&dialBuffer, 6);
+      z = bufferDecCharToInt(&dialBuffer, 8);
+  } else {
+      x = bufferHexCharToHex(&dialBuffer, 4);
+      y = bufferHexCharToHex(&dialBuffer, 6);
+      z = bufferHexCharToHex(&dialBuffer, 8);
+  };
   
-    resetRouteDialBuffer();
-    requestChannelDump();
-    
+  lbound = bufferHexCharToHex(&dialBuffer, 10);
+  ubound = bufferHexCharToHex(&dialBuffer, 12);
+
+  uint8_t sysex[17] = {
+      0xF0, 0x77, 0x77, 0x78, 0x0F, 0x3,
+      setOrClear, DISP_CableOrJack, DISP_Port, slot, command, x, y, z, lbound, ubound,
+      0xF7
+  };
+
+  Serial2.write(sysex, 18);
+   
+  resetRouteDialBuffer();
+  requestChannelRouteDump();
 }
 
-void processRouteDialKeypress()
+void processDialKeypress()
 {
 
   switch (keyPress)
@@ -315,38 +348,88 @@ void processRouteDialKeypress()
     case '5': case '6': case '7': case '8': case '9':
       nums++;
       dialBuffer[dialBufferPos++] = keyPress;
-      if (nums == 2) processRouteDialBuffer();
+      if (nums == 2 && UI_Function_L2 == 0) processRouteDialBuffer();
+      if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
       break;
 
     case '*':     
-      dialCableOrJack = CABLE;
+      if (UI_Function_L2 == ROUTES){
+        dialCableOrJack = CABLE;
+      } else if (UI_Function_L2 == TRANSFORMERS){
+        nums++;
+        dialBuffer[dialBufferPos++] = 'E';
+        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+      }
       break;
          
     case '#':
-      dialCableOrJack = JACK;
+      if (UI_Function_L2 == ROUTES){
+        dialCableOrJack = JACK;
+      } else if (UI_Function_L2 == TRANSFORMERS){
+        nums++;
+        dialBuffer[dialBufferPos++] = 'F';
+        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+      }
       break;
     
     case 'A': 
-      toggleFilter(0);
+      if (UI_Function_L2 == ROUTES){
+        toggleFilter(0);
+      } else if (UI_Function_L2 == TRANSFORMERS){
+        nums++;
+        dialBuffer[dialBufferPos++] = keyPress;
+        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+      }
       break;
          
     case 'B':
-      toggleFilter(1);
+      if (UI_Function_L2 == ROUTES){
+        toggleFilter(1);
+      } else if (UI_Function_L2 == TRANSFORMERS){
+        nums++;
+        dialBuffer[dialBufferPos++] = keyPress;
+        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+      }
       break;
 
     case 'C': 
-      toggleFilter(2);
+      if (UI_Function_L2 == ROUTES){
+        toggleFilter(2);
+      } else if (UI_Function_L2 == TRANSFORMERS){
+        nums++;
+        dialBuffer[dialBufferPos++] = keyPress;
+        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+      }
       break;
          
     case 'D':
-      toggleFilter(3);
+      if (UI_Function_L2 == ROUTES){
+        toggleFilter(3);
+      } else if (UI_Function_L2 == TRANSFORMERS){
+        nums++;
+        dialBuffer[dialBufferPos++] = keyPress;
+        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+      }
       break;
       
   }
 
 }
 
-/* UI */
+void toggleFilter(uint8_t filterBit)
+{
+  
+    GLB_Filter ^= (1 << filterBit);
+    uint8_t sysexConfig[10] = {0xF0, 0x77, 0x77, 0x78, 0x0F, 0x2, DISP_CableOrJack, DISP_Port, GLB_Filter, 0xF7};
+
+    delay(250);
+  
+    resetRouteDialBuffer();
+    requestChannelRouteDump();
+   
+}
+
+/* Update UI */
 
 void processScreen1()
 {
@@ -354,9 +437,17 @@ void processScreen1()
   displayWrite(&display, menus[UI_Function_L1].members[UI_Function_L2], 0, 9, 0);
 
   if ( UI_Function_L1 == USBMIDIKLIK ) {
+
+    if (UI_Function_L2 == ROUTES){
       displayWrite(&display, "Channels <-U,Y->", 0, 27, 0);
       displayWrite(&display, "Pages B->>", 0, 36, 0);
       displayWrite(&display, "Keypad to config", 0, 45, 0);
+    } else 
+    if (UI_Function_L2 == TRANSFORMERS){
+      displayWrite(&display, "Slots <-U,Y->", 0, 27, 0);
+      displayWrite(&display, "Keypad to config", 0, 45, 0);
+    }
+
   }
   else    
   if ( UI_Function_L1 == SYSEXBANK ) {
@@ -373,90 +464,99 @@ void processScreen1()
           
         }
       } 
+
   }
 
 }
 
 void processScreen2()
 {   
-    if (UI_Function_L1 == 0){ //klik
+    if (UI_Function_L1 == USBMIDIKLIK){ 
+   
+       if (UI_Function_L2 == ROUTES){
+
+         char cableTargetsTxt[20] = "";
+         char jackTargetsTxt[20] = "";
+         uint8_t cableTargetsTxtPos = 0;
+         uint8_t jackTargetsTxtPos = 0;
       
-       uint8_t cableTargetCount = countSetBits(GLB_BMT_Cable);
-       uint8_t jackTargetCount = countSetBits(GLB_BMT_Jack);
-    
-       char cableTargetsTxt[20] = "";
-       char jackTargetsTxt[20] = "";
-       uint8_t cableTargetsTxtPos = 0;
-       uint8_t jackTargetsTxtPos = 0;
-    
-       displayBlank(&display2); 
+         displayBlank(&display2); 
 
-       displayWriteRaw(&display2, GLB_ScreenTitle1, 0, 0, 0);
-       displayWriteRaw(&display2, GLB_ScreenTitle2, 0, 9, 0);
-       displayWriteInt(&display2, GLB_Port, 40, 9, 0);
-       displayWriteRaw(&display2, GLB_Filter_XO, 75, 0, 0);
-      
-       displayWriteRaw(&display2,"To Cables:",0,18,0);
-       displayWriteRaw(&display2,"To Jacks:",0,36,0);
+         displayWriteRaw(&display2, GLB_ScreenTitle1, 0, 0, 0);
+         displayWriteRaw(&display2, GLB_ScreenTitle2, 0, 9, 0);
+         displayWriteInt(&display2, GLB_Port, 40, 9, 0);
+         displayWriteRaw(&display2, GLB_Filter_XO, 75, 0, 0);
+        
+         displayWriteRaw(&display2,"To Cables:",0,18,0);
+         displayWriteRaw(&display2,"To Jacks:",0,36,0);
 
-       if (cableTargetCount>0){
-             
-         for(uint8_t i=0;i<16;i++){
-            if (GLB_BMT_Cable & (1 << i)){  
-                    
-              char dig1 = getdigit(i,0)+'0';
-              char dig2 = getdigit(i,1)+'0'; 
+         uint8_t cableTargetCount = countSetBits(GLB_BMT_Cable);
+         uint8_t jackTargetCount = countSetBits(GLB_BMT_Jack);
 
-              if (i>=10){       
-                cableTargetsTxt[cableTargetsTxtPos++] = dig2;
-                cableTargetsTxt[cableTargetsTxtPos++] = dig1;
-                cableTargetsTxt[cableTargetsTxtPos++] = ' ';
-              } else {
-                cableTargetsTxt[cableTargetsTxtPos++] = dig1;
-                cableTargetsTxt[cableTargetsTxtPos++] = ' ';
+         if (cableTargetCount > 0){
+               
+           for(uint8_t i=0;i<16;i++){
+              if (GLB_BMT_Cable & (1 << i)){  
+                      
+                char dig1 = getdigit(i,0)+'0';
+                char dig2 = getdigit(i,1)+'0'; 
+
+                if (i>=10){       
+                  cableTargetsTxt[cableTargetsTxtPos++] = dig2;
+                  cableTargetsTxt[cableTargetsTxtPos++] = dig1;
+                  cableTargetsTxt[cableTargetsTxtPos++] = ' ';
+                } else {
+                  cableTargetsTxt[cableTargetsTxtPos++] = dig1;
+                  cableTargetsTxt[cableTargetsTxtPos++] = ' ';
+                }
               }
-            }
-         } 
+           } 
 
-         VX=0;
-         for (int i=0;i<cableTargetCount; i++) {
-            displayWriteRaw(&display2, &cableTargetsTxt[i], VX, 27, 0);
-            VX+=6;
-         }
-              
-       }
-       
-       if (jackTargetCount>0){
+           VX=0;
+           for (int i=0;i<cableTargetCount; i++) {
+              displayWriteRaw(&display2, &cableTargetsTxt[i], VX, 27, 0);
+              VX+=6;
+           }
                 
-         for(int i=0;i<16;i++){
-            if (GLB_BMT_Jack & (1 << i)){
-              
-              char dig1 = getdigit(i,0)+'0';
-              char dig2 = getdigit(i,1)+'0';
-       
-              if (i>=10){       
-                jackTargetsTxt[jackTargetsTxtPos++] = dig2;
-                jackTargetsTxt[jackTargetsTxtPos++] = dig1;
-                jackTargetsTxt[jackTargetsTxtPos++] = ' ';               
-              } else {
-                jackTargetsTxt[jackTargetsTxtPos++] = dig1;
-                jackTargetsTxt[jackTargetsTxtPos++] = ' ';
-              }
-
-                            
-            }
-         } 
-
-         VX=0;          
-         for (int i=0;i<jackTargetCount; i++) {
-            displayWriteRaw(&display2, &jackTargetsTxt[i], VX, 45, 0);
-            VX+=6;
-         }    
+         }
          
+         if (jackTargetCount > 0){
+                  
+           for(int i=0;i<16;i++){
+              if (GLB_BMT_Jack & (1 << i)){
+                
+                char dig1 = getdigit(i,0)+'0';
+                char dig2 = getdigit(i,1)+'0';
+         
+                if (i>=10){       
+                  jackTargetsTxt[jackTargetsTxtPos++] = dig2;
+                  jackTargetsTxt[jackTargetsTxtPos++] = dig1;
+                  jackTargetsTxt[jackTargetsTxtPos++] = ' ';               
+                } else {
+                  jackTargetsTxt[jackTargetsTxtPos++] = dig1;
+                  jackTargetsTxt[jackTargetsTxtPos++] = ' ';
+                }
+                 
+              }
+           } 
+
+           VX=0;          
+           for (int i=0;i<jackTargetCount; i++) {
+              displayWriteRaw(&display2, &jackTargetsTxt[i], VX, 45, 0);
+              VX+=6;
+           }    
+           
+         }
+
+       } else 
+       if (UI_Function_L2 == TRANSFORMERS){
+
+          displayBlank(&display2); 
+          displayWriteRaw(&display2, GLB_Transformers, 0, 0, 0);
+
        }
-       
     } else
-    if (UI_Function_L1 == 1){ //bank
+    if (UI_Function_L1 == SYSEXBANK){
       
         displayBlank(&display2);
   
@@ -466,7 +566,7 @@ void processScreen2()
     
 }
 
-/* (Pre-) Process Incoming Data */
+/* Process Incoming Data */
 
 void processIncomingPIStorageByte(byte dataByte)
 {
@@ -533,8 +633,7 @@ void processIncomingSerial2Byte(byte dataByte)
                     GLB_BMT_Jack |= (1 << serialMessageBuffer[dtstrt++]);
                   }
               }
-             
-              
+               
           } else
           if (RCV_RouteOrFilter == FILTER) {  
               digitalWrite(LED_GREEN, LOW);
@@ -542,6 +641,20 @@ void processIncomingSerial2Byte(byte dataByte)
               for (int i=0;i<4;i++){
                 GLB_Filter_XO[i] = RCV_CableOrJackTgtOrFilter & (1 << i) ? 'X' : '-';
               }
+          } else 
+          if (RCV_RouteOrFilter == TRANSFORMER){
+                
+                char RCV_TransformerSlot = serialMessageBuffer[9];
+
+                strncpy(GLB_ScreenTitle1, "TRANSFORMERS", sizeof(GLB_ScreenTitle1));
+                strncpy(GLB_ScreenTitle2, RCV_TransformerSlot, sizeof(GLB_ScreenTitle2));
+
+                GLB_Transformers[RCV_TransformerSlot][0] = serialMessageBuffer[10];  // command
+                GLB_Transformers[RCV_TransformerSlot][1] = serialMessageBuffer[11];  // x
+                GLB_Transformers[RCV_TransformerSlot][2] = serialMessageBuffer[12];  // y
+                GLB_Transformers[RCV_TransformerSlot][3] = serialMessageBuffer[13];  // z
+                GLB_Transformers[RCV_TransformerSlot][4] = serialMessageBuffer[14];  // lb
+                GLB_Transformers[RCV_TransformerSlot][5] = serialMessageBuffer[15];  // ub
           }
           
           if (--pendingConfigPackets == 0)
@@ -549,8 +662,8 @@ void processIncomingSerial2Byte(byte dataByte)
           
       } 
   }
-  else if (UI_Function_L1 == SYSEXBANK) {//received data is data to forward to pi storage 
-  
+  else if (UI_Function_L1 == SYSEXBANK) { //received data is data for pi storage, - forward
+    Serial3.print(dataByte); 
     
   }
 
@@ -568,9 +681,9 @@ void menuNext()
   } else if ( UI_Function_L1 == SYSEXBANK ) {
 
       if (UI_Function_L2 == SAVES){
-        Serial3.print(0x4); //rec mode 
+        Serial3.print(REC_MODE);
       } else if (UI_Function_L2 == LOADS){
-        Serial3.print(0x5); //load mode
+        Serial3.print(DISPLAY_CURRENT);
       }
       
   }
@@ -581,10 +694,12 @@ void menuNext()
 
 void processButtons()
 {
+
   tbRed.read();
   tbBlack.read();
   tbBlue.read();
   tbYellow.read();
+  keyPress = customKeypad.getKey();
 
   if (tbBlack.changed()) {
      cableJackSelect = false;
@@ -594,51 +709,67 @@ void processButtons()
   }
   
   if (tbRed.changed()) {
-      if ( UI_Function_L1 == USBMIDIKLIK ) {
+
+    if ( UI_Function_L1 == USBMIDIKLIK ) {
+      if ( UI_Function_L2 == ROUTES ) {
         cableJackSelect = !cableJackSelect;
         digitalWrite(LED_YELLOW, cableJackSelect);
         if (!cableJackSelect){
           DISP_CableOrJack = !DISP_CableOrJack;
           DISP_Port = 0;
-          requestChannelDump(); 
-        }       
-      } else if ( UI_Function_L1 == SYSEXBANK ) {
-        Serial3.print(0x5);  //request currently selected filename
-      }
+          requestChannelRouteDump(); 
+        } 
+      else    
+      if ( UI_Function_L2 == TRANSFORMERS ){
+        requestChannelTransformerDump();
+      }   
+    } else if ( UI_Function_L1 == SYSEXBANK ) {
+      Serial3.print(LOAD_FILE);
+    }
+
   }
   
   if (tbYellow.changed()) {
-    
+
     if ( UI_Function_L1 == USBMIDIKLIK ) {
-      cableJackSelect = false;
-      digitalWrite(LED_YELLOW, LOW);
-      if (DISP_Port != 15) DISP_Port++; 
-      requestChannelDump();
+      if ( UI_Function_L2 == ROUTES ) {
+        cableJackSelect = false;
+        digitalWrite(LED_YELLOW, LOW);
+        if (DISP_Port != 15) DISP_Port++; 
+        requestChannelRouteDump();
+      } else
+      if ( UI_Function_L2 == TRANSFORMERS ) {
+        if (DISP_Slot != 2) DISP_Slot++; 
+        requestChannelTransformerDump();
+      }
     } else if ( UI_Function_L1 == SYSEXBANK ) {
-      Serial3.print(0x1); //request currently selected file++
+      Serial3.print(BROWSE_FORWARD);
     }
-    
+
   }
 
   if (tbBlue.changed()) {
+
     if ( UI_Function_L1 == USBMIDIKLIK ) {
-      cableJackSelect = false;
-      digitalWrite(LED_YELLOW, LOW);
-      if (DISP_Port != 0) DISP_Port--; 
-      requestChannelDump();
+      if ( UI_Function_L2 == ROUTES ) {
+        cableJackSelect = false;
+        digitalWrite(LED_YELLOW, LOW);
+        if (DISP_Port != 0) DISP_Port--; 
+        requestChannelRouteDump();
+      } else 
+      if ( UI_Function_L2 == TRANSFORMERS ) {
+        if (DISP_Slot != 0) DISP_Slot--;
+        requestChannelTransformerDump();
+      }
     } else if ( UI_Function_L1 == SYSEXBANK ) {
-      Serial3.print(0x2); //request currently selected file--
+      Serial3.print(BROWSE_BACKWARD);
     }
+
   }
 
-  keyPress = customKeypad.getKey();
-  
   if ( keyPress && UI_Function_L1 == USBMIDIKLIK ) {
-     processRouteDialKeypress();
-  } else if ( UI_Function_L1 == SYSEXBANK ) {
-
-  }
-  
+     processDialKeypress();
+  }  
 }
 
 void processSerial()
@@ -655,7 +786,6 @@ void processSerial()
     inByte = Serial3.read();
     processIncomingPIStorageByte(inByte);
   }
-
 }
 
 void loop()
@@ -701,6 +831,6 @@ void setup()
 #endif
 
   processScreen1();
-  requestChannelDump(); 
+  requestChannelRouteDump(); 
   
 }
