@@ -15,6 +15,7 @@
 #define OLED_RESET -1
 #define LED_PULSE_MILLIS  500
 #define MIDIUSB_ENABLE__NOPE
+#define TRANSFORMERS_PR_CHANNEL 2
 
 Adafruit_SSD1306 display(OLED_RESET);
 Adafruit_SSD1306 display2(OLED_RESET);
@@ -32,10 +33,10 @@ struct menu {
 };
 
 struct transformerInfo{
-  uint8_t transformerByte[7];
+  uint8_t transformerByte[8];
 };
 
-transformerInfo GLB_Transformers[3];
+transformerInfo GLB_Transformers[TRANSFORMERS_PR_CHANNEL];
 
 const struct menu menus[] = {
   {"USBMidiKlik", {"Routes", "Transformers"} },
@@ -59,10 +60,10 @@ char dialBuffer[3];
 uint8_t dialBufferPos = 0, nums = 0, tags = 0;
 uint8_t VX = 0, VY = 0;
 
-byte currentFlowType = 0x0;
+uint8_t currentFlowType = 0x0; //was byte
 char serialMessageBuffer[64];
 uint8_t serialMessageBufferIDX = 0;
-byte inByte;
+uint8_t inByte; //was byte
 
 USBMidi MidiUSB;
 HardwareSerial * serialHw[SERIAL_INTERFACE_MAX] = {SERIALS_PLIST};
@@ -82,12 +83,12 @@ char GLB_Filter_XO[4];
 
 uint8_t DISP_CableOrJack = CABLE;
 uint8_t DISP_Port = 0;
-uint8_t DISP_Slot = 0;
+uint8_t DISP_TransformerSlot = 0;
 
 uint8_t pendingConfigPackets;
 bool cableJackSelect = false;
 
-/* Display */
+/* Display - Fix this horror !!! */
 
 void displayWrite(Adafruit_SSD1306* disp, const char* txt, int x, int y, bool clr)
 {
@@ -136,7 +137,7 @@ void SerialWritePacket(const midiPacket_t *pk, uint8_t serialNo)
   serialHw[serialNo]->write(&pk->packet[1], msgLen);
 }
 
-void sysexForward(byte dataByte)
+void sysexForward(uint8_t dataByte) //was byte
 {
   if (dataByte == 0xF7) {
 
@@ -192,40 +193,32 @@ void sysexSendToUSB(uint8_t buff[], uint16_t sz)
   }
 }
 
-void requestChannelRouteDump()
+void requestPortRouteDump()
 {
   digitalWrite(LED_BLUE, HIGH);
   digitalWrite(LED_RED, HIGH);
   digitalWrite(LED_GREEN, HIGH);
  
-  uint8_t sysex_cableTargets[10] =  { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x1, DISP_CableOrJack, DISP_Port, 0x0, 0xF7 };
-  uint8_t sysex_jackTargets[10] =   { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x1, DISP_CableOrJack, DISP_Port, 0x1, 0xF7 };
-  uint8_t sysex_filterTargets[10] = { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x2, DISP_CableOrJack, DISP_Port, 0x0, 0xF7 };   
+  uint8_t sysex_cableTargets[11] =  { 0xF0, 0x77, 0x77, 0x78, 0x5, 0x1, 0x1, DISP_CableOrJack, DISP_Port, 0x0, 0xF7 };
+  uint8_t sysex_jackTargets[11] =   { 0xF0, 0x77, 0x77, 0x78, 0x5, 0x1, 0x1, DISP_CableOrJack, DISP_Port, 0x1, 0xF7 };
+  uint8_t sysex_filterTargets[11] = { 0xF0, 0x77, 0x77, 0x78, 0x5, 0x1, 0x2, DISP_CableOrJack, DISP_Port, 0x0, 0xF7 };   
   
   pendingConfigPackets = 3;
   
-  Serial2.write(sysex_cableTargets, 10);delay(100);Serial.flush();
-  Serial2.write(sysex_jackTargets, 10);delay(100);Serial.flush();
-  Serial2.write(sysex_filterTargets, 10);delay(100);Serial.flush();
-  
+  Serial2.write(sysex_cableTargets, 11);delay(100);Serial.flush();
+  Serial2.write(sysex_jackTargets, 11);delay(100);Serial.flush();
+  Serial2.write(sysex_filterTargets, 11);delay(100);Serial.flush();  
 }
 
-void requestChannelTransformerDump()
+void requestPortTransformerDump()
 {
   digitalWrite(LED_BLUE, HIGH);
-  digitalWrite(LED_RED, HIGH);
-  digitalWrite(LED_GREEN, HIGH);
   
-  uint8_t sysex_transformers_slot_1[10] = { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x3, DISP_CableOrJack, DISP_Port, 0x0, 0xF7 }; 
-  uint8_t sysex_transformers_slot_2[10] = { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x3, DISP_CableOrJack, DISP_Port, 0x1, 0xF7 }; 
-  uint8_t sysex_transformers_slot_3[10] = { 0xF0, 0x77, 0x77, 0x78, 0x4, 0x3, DISP_CableOrJack, DISP_Port, 0x2, 0xF7 }; 
+  uint8_t sysex_transformers_slot[11] = { 0xF0, 0x77, 0x77, 0x78, 0x5, 0x1, 0x3, DISP_CableOrJack, DISP_Port, DISP_TransformerSlot, 0xF7 }; 
 
-  pendingConfigPackets = 3;
+  pendingConfigPackets = 1;
 
-  Serial2.write(sysex_transformers_slot_1, 10);delay(100);Serial.flush();
-  Serial2.write(sysex_transformers_slot_2, 10);delay(100);Serial.flush();
-  Serial2.write(sysex_transformers_slot_3, 10);delay(100);Serial.flush();
-  
+  Serial2.write(sysex_transformers_slot, 11);delay(100);Serial.flush();  
 }
 
 /* Keypad */
@@ -271,7 +264,7 @@ void processRouteDialBuffer()
     DISP_Port = src_id;
     cableJackSelect = false;    
     digitalWrite(LED_YELLOW, LOW);
-    requestChannelRouteDump();
+    requestPortRouteDump();
     
   } else {
     
@@ -288,7 +281,7 @@ void processRouteDialBuffer()
     uint8_t sysexComplete[sz];
   
     memcpy(sysexComplete,sysexConfig,9*sizeof(uint8_t));
-    memcpy(sysexComplete+sz-1,sysexEnd,sizeof(byte));
+    memcpy(sysexComplete+sz-1,sysexEnd,sizeof(uint8_t)); //was byte
     
     for (uint8_t i=0;i<=15;i++){
       if (*GLB_BMT & (1 << i)){
@@ -300,7 +293,7 @@ void processRouteDialBuffer()
     delay(250);
     
     resetRouteDialBuffer();
-    requestChannelRouteDump();
+    requestPortRouteDump();
   }
 }
 
@@ -310,31 +303,27 @@ void processTransformerDialBuffer()
   uint8_t setOrClear = 0x1;
   uint8_t slot = bufferCharToHex(&dialBuffer, 0);
   uint8_t command = bufferCharToHex(&dialBuffer, 2);
-  uint8_t x,y,z,lbound,ubound;
+  uint8_t x,y,z,v,lbound,ubound;
 
-  if (command != evm){
-      x = bufferDecCharToInt(&dialBuffer, 4);
-      y = bufferDecCharToInt(&dialBuffer, 6);
-      z = bufferDecCharToInt(&dialBuffer, 8);
-  } else {
-      x = bufferHexCharToHex(&dialBuffer, 4);
-      y = bufferHexCharToHex(&dialBuffer, 6);
-      z = bufferHexCharToHex(&dialBuffer, 8);
-  };
+  x = bufferHexCharToHex(&dialBuffer, 4);
+  y = bufferHexCharToHex(&dialBuffer, 6);
+  z = bufferHexCharToHex(&dialBuffer, 8);
+  v = bufferHexCharToHex(&dialBuffer, 10);
   
-  lbound = bufferHexCharToHex(&dialBuffer, 10);
-  ubound = bufferHexCharToHex(&dialBuffer, 12);
+  lbound = bufferHexCharToHex(&dialBuffer, 12);
+  ubound = bufferHexCharToHex(&dialBuffer, 14);
 
-  uint8_t sysex[17] = {
+  uint8_t sysex[18] = {
       0xF0, 0x77, 0x77, 0x78, 0x0F, 0x3,
-      setOrClear, DISP_CableOrJack, DISP_Port, slot, command, x, y, z, lbound, ubound,
+      setOrClear, DISP_CableOrJack, DISP_Port, slot, command, x, y, z, v, lbound, ubound,
       0xF7
   };
 
+  Serial.write(sysex,18);
   Serial2.write(sysex, 18);
    
   resetRouteDialBuffer();
-  requestChannelRouteDump();
+  requestPortRouteDump();
 }
 
 void processDialKeypress()
@@ -349,7 +338,7 @@ void processDialKeypress()
       nums++;
       dialBuffer[dialBufferPos++] = keyPress;
       if (nums == 2 && UI_Function_L2 == 0) processRouteDialBuffer();
-      if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+      if (nums == 16 && UI_Function_L2 == 1) processTransformerDialBuffer();
       break;
 
     case '*':     
@@ -358,7 +347,7 @@ void processDialKeypress()
       } else if (UI_Function_L2 == TRANSFORMERS){
         nums++;
         dialBuffer[dialBufferPos++] = 'E';
-        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+        if (nums == 16 && UI_Function_L2 == 1) processTransformerDialBuffer();
       }
       break;
          
@@ -368,7 +357,7 @@ void processDialKeypress()
       } else if (UI_Function_L2 == TRANSFORMERS){
         nums++;
         dialBuffer[dialBufferPos++] = 'F';
-        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+        if (nums == 16 && UI_Function_L2 == 1) processTransformerDialBuffer();
       }
       break;
     
@@ -378,7 +367,7 @@ void processDialKeypress()
       } else if (UI_Function_L2 == TRANSFORMERS){
         nums++;
         dialBuffer[dialBufferPos++] = keyPress;
-        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+        if (nums == 16 && UI_Function_L2 == 1) processTransformerDialBuffer();
       }
       break;
          
@@ -388,7 +377,7 @@ void processDialKeypress()
       } else if (UI_Function_L2 == TRANSFORMERS){
         nums++;
         dialBuffer[dialBufferPos++] = keyPress;
-        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+        if (nums == 16 && UI_Function_L2 == 1) processTransformerDialBuffer();
       }
       break;
 
@@ -398,7 +387,7 @@ void processDialKeypress()
       } else if (UI_Function_L2 == TRANSFORMERS){
         nums++;
         dialBuffer[dialBufferPos++] = keyPress;
-        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+        if (nums == 16 && UI_Function_L2 == 1) processTransformerDialBuffer();
       }
       break;
          
@@ -408,7 +397,7 @@ void processDialKeypress()
       } else if (UI_Function_L2 == TRANSFORMERS){
         nums++;
         dialBuffer[dialBufferPos++] = keyPress;
-        if (nums == 14 && UI_Function_L2 == 1) processTransformerDialBuffer();
+        if (nums == 16 && UI_Function_L2 == 1) processTransformerDialBuffer();
       }
       break;
       
@@ -425,7 +414,7 @@ void toggleFilter(uint8_t filterBit)
     delay(250);
   
     resetRouteDialBuffer();
-    requestChannelRouteDump();
+    requestPortRouteDump();
    
 }
 
@@ -568,7 +557,7 @@ void processScreen2()
 
 /* Process Incoming Data */
 
-void processIncomingPIStorageByte(byte dataByte)
+void processIncomingPIStorageByte(uint8_t dataByte) //was byte
 {
   if (dataByte == 0xFF) { //END
     if (currentFlowType == 0xFD) { 
@@ -595,7 +584,7 @@ void processIncomingPIStorageByte(byte dataByte)
 
 }
 
-void processIncomingSerial2Byte(byte dataByte)
+void processIncomingSerial2Byte(uint8_t dataByte) //was byte
 {
   serialMessageBuffer[serialMessageBufferIDX++] = dataByte;
 
@@ -649,12 +638,14 @@ void processIncomingSerial2Byte(byte dataByte)
                 strncpy(GLB_ScreenTitle1, "TRANSFORMERS", sizeof(GLB_ScreenTitle1));
                 strncpy(GLB_ScreenTitle2, RCV_TransformerSlot, sizeof(GLB_ScreenTitle2));
 
-                GLB_Transformers[RCV_TransformerSlot][0] = serialMessageBuffer[10];  // command
-                GLB_Transformers[RCV_TransformerSlot][1] = serialMessageBuffer[11];  // x
-                GLB_Transformers[RCV_TransformerSlot][2] = serialMessageBuffer[12];  // y
-                GLB_Transformers[RCV_TransformerSlot][3] = serialMessageBuffer[13];  // z
-                GLB_Transformers[RCV_TransformerSlot][4] = serialMessageBuffer[14];  // lb
-                GLB_Transformers[RCV_TransformerSlot][5] = serialMessageBuffer[15];  // ub
+                GLB_Transformers[RCV_TransformerSlot][0] = RCV_TransformerSlot;      // slot
+                GLB_Transformers[RCV_TransformerSlot][1] = serialMessageBuffer[10];  // command
+                GLB_Transformers[RCV_TransformerSlot][2] = serialMessageBuffer[11];  // x
+                GLB_Transformers[RCV_TransformerSlot][3] = serialMessageBuffer[12];  // y
+                GLB_Transformers[RCV_TransformerSlot][4] = serialMessageBuffer[13];  // z
+                GLB_Transformers[RCV_TransformerSlot][5] = serialMessageBuffer[14];  // v
+                GLB_Transformers[RCV_TransformerSlot][6] = serialMessageBuffer[15];  // lb
+                GLB_Transformers[RCV_TransformerSlot][7] = serialMessageBuffer[16];  // ub
           }
           
           if (--pendingConfigPackets == 0)
@@ -717,11 +708,11 @@ void processButtons()
         if (!cableJackSelect){
           DISP_CableOrJack = !DISP_CableOrJack;
           DISP_Port = 0;
-          requestChannelRouteDump(); 
+          requestPortRouteDump(); 
         } 
       else    
       if ( UI_Function_L2 == TRANSFORMERS ){
-        requestChannelTransformerDump();
+        requestPortTransformerDump();
       }   
     } else if ( UI_Function_L1 == SYSEXBANK ) {
       Serial3.print(LOAD_FILE);
@@ -736,11 +727,11 @@ void processButtons()
         cableJackSelect = false;
         digitalWrite(LED_YELLOW, LOW);
         if (DISP_Port != 15) DISP_Port++; 
-        requestChannelRouteDump();
+        requestPortRouteDump();
       } else
       if ( UI_Function_L2 == TRANSFORMERS ) {
-        if (DISP_Slot != 2) DISP_Slot++; 
-        requestChannelTransformerDump();
+        if (DISP_TransformerSlot != 2) DISP_TransformerSlot++; 
+        requestPortTransformerDump();
       }
     } else if ( UI_Function_L1 == SYSEXBANK ) {
       Serial3.print(BROWSE_FORWARD);
@@ -755,11 +746,11 @@ void processButtons()
         cableJackSelect = false;
         digitalWrite(LED_YELLOW, LOW);
         if (DISP_Port != 0) DISP_Port--; 
-        requestChannelRouteDump();
+        requestPortRouteDump();
       } else 
       if ( UI_Function_L2 == TRANSFORMERS ) {
-        if (DISP_Slot != 0) DISP_Slot--;
-        requestChannelTransformerDump();
+        if (DISP_TransformerSlot != 0) DISP_TransformerSlot--;
+        requestPortTransformerDump();
       }
     } else if ( UI_Function_L1 == SYSEXBANK ) {
       Serial3.print(BROWSE_BACKWARD);
@@ -831,6 +822,6 @@ void setup()
 #endif
 
   processScreen1();
-  requestChannelRouteDump(); 
+  requestPortRouteDump(); 
   
 }
