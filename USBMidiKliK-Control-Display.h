@@ -2,11 +2,6 @@
 #define _USBMIDIKLIK4X4_H_
 #pragma once
 
-typedef union  {
-    uint32_t i;
-    uint8_t  packet[4];
-} midiPacket_t;
-
 const uint8_t CINToLenTable[] =
 {
   0, // 0X00 Miscellaneous function codes. Reserved for future extensions.
